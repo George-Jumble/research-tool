@@ -20,6 +20,7 @@ from tav_research.dataset_manager import (
     DATASET_RUN_ACTION,
 )
 from tav_shared.clear_cache import CLEAR_CACHE_MENU_LABEL
+from tav_research.external_editor import EXTERNAL_EDITOR_MENU_LABEL
 from tav_research.gateway_launcher import GATEWAY_GUI_MENU_LABEL
 from tav_research.registry import MODULE_EXTENSIONS
 from tav_research import registry
@@ -43,6 +44,7 @@ def build_menu_tree():
     if registry.integrator_extension is not None:
         domains.append(registry.integrator_extension.SUBMENU_TITLE)
     domains.append(DATASET_MANAGER_TITLE)
+    domains.append(EXTERNAL_EDITOR_MENU_LABEL)
     domains.append(CLEAR_CACHE_MENU_LABEL)
     domains.append("Exit")
 

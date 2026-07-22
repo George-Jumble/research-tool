@@ -23,6 +23,110 @@ COLUMN_ALIASES = {
 }
 
 
+class TavDiagnostics:
+    """Diagnostic suite for Tav-Superblock framework calibration."""
+
+    def __init__(self, target_ratio: float = THEORY_RATIO_TARGET):
+        self.target_ratio = float(target_ratio)
+
+    def calculate_domain_shear(self, obs_ratio: float) -> float:
+        """Return absolute shear (eta) from theory-target ratio delta."""
+        return float(np.abs(self.target_ratio - float(obs_ratio)))
+
+    def apply_harmonic_damping(
+        self,
+        gamma_i: float,
+        shear_r: float,
+        tav_floor: float = 313.1,
+    ) -> float:
+        """Topological damping factor: gamma_adj = gamma_i * exp(-shear/tav_floor)."""
+        damping = np.exp(-float(shear_r) / float(tav_floor))
+        return float(float(gamma_i) * damping)
+
+
+class TauSuperblockSolver:
+    def __init__(self, lambda_tav: float = 7.0, r_baseline: float = 5.2):
+        self.lambda_tav = float(lambda_tav)
+        self.r_baseline = float(r_baseline)
+
+    def compute_local_kappa(self, r_local: np.ndarray) -> np.ndarray:
+        """Compute domain coupling coefficient kappa_fil = 1 - exp(-r^2/lambda_tav^2)."""
+        r = np.asarray(r_local, dtype=float)
+        return 1.0 - np.exp(-(r**2) / (self.lambda_tav**2))
+
+    def simulate_local_kappa(
+        self,
+        dist_filament: np.ndarray,
+        shear_penalty: np.ndarray,
+    ) -> np.ndarray:
+        """Compute local kappa with geometric coupling and phase-slip shear suppression."""
+        dist = np.asarray(dist_filament, dtype=float)
+        shear = np.asarray(shear_penalty, dtype=float)
+
+        kappa_base = 1.0 - np.exp(-(dist**2) / (self.lambda_tav**2))
+        phase_alignment_factor = np.clip(1.0 - (shear / 5.2), 0.01, 1.0)
+        return kappa_base * phase_alignment_factor
+
+    def compute_choked_shadow_ratio(self, kappa_local: np.ndarray) -> np.ndarray:
+        """Compute effective shadow/baryon ratio under local choking suppression."""
+        kappa = np.asarray(kappa_local, dtype=float)
+        return self.r_baseline * kappa
+
+    def compute_effective_ratio(
+        self,
+        r_local: np.ndarray,
+        delta_phi: np.ndarray,
+        f_align: float = 1.0,
+        epsilon_tep: float = 0.15,
+    ) -> np.ndarray:
+        """Solve R_eff with flux-choking and TEP phase-slip penalty."""
+        kappa = self.compute_local_kappa(r_local)
+        phase = np.asarray(delta_phi, dtype=float)
+        phase_penalty = np.clip(1.0 - float(epsilon_tep) * (phase / np.pi), 0.0, 1.5)
+        return self.r_baseline * kappa * float(f_align) * phase_penalty
+
+    def compute_quench_deficit_heating(
+        self,
+        e_kinetic: np.ndarray,
+        kappa: np.ndarray,
+        omega: float = 1.0,
+    ) -> np.ndarray:
+        """Compute quench-deficit energy Delta E_fluct proxy for WHIM/X-ray excess."""
+        e = np.asarray(e_kinetic, dtype=float)
+        k = np.asarray(kappa, dtype=float)
+        return e * (1.0 - np.exp(-k * float(omega)))
+
+
+def run_diagnostic_sweep(galaxy_data: dict[str, float]) -> dict[str, dict[str, float]]:
+    """
+    Run domain-shear diagnostics over observed ratio values keyed by galaxy name.
+    """
+    diag = TavDiagnostics()
+    results: dict[str, dict[str, float]] = {}
+
+    for galaxy, obs_ratio in galaxy_data.items():
+        shear = diag.calculate_domain_shear(obs_ratio)
+        results[galaxy] = {"shear": shear}
+        print(f"[DIAGNOSTIC] Galaxy: {galaxy} | Shear: {shear:.4f}")
+
+    return results
+
+
+def calibrate_weighting_schema(
+    current_weights: dict[str, float],
+    shear_map: dict[str, dict[str, float]],
+) -> dict[str, float]:
+    """Apply topological damping calibration using per-galaxy shear values."""
+    diag = TavDiagnostics()
+    calibrated_weights: dict[str, float] = {}
+
+    for galaxy, weight in current_weights.items():
+        shear = float((shear_map.get(galaxy) or {}).get("shear", 0.0))
+        calibrated_weights[galaxy] = diag.apply_harmonic_damping(weight, shear)
+
+    return calibrated_weights
+
+
 def resolve_sparc_file(query: str, params: Optional[dict] = None) -> str:
     """Resolve a SPARC CSV from galaxy ID, explicit path, or entry-form override."""
     params = params or {}

@@ -45,9 +45,9 @@ except ImportError:
 # =============================================================================
 # CONFIG
 # =============================================================================
-_PROJECT_ROOT = Path(__file__).resolve().parent
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_DATA_DIR = _PROJECT_ROOT / "datasets" / "sparc"
-ARTIFACTS_DIR = _PROJECT_ROOT / "artifacts"
+ARTIFACTS_DIR = _PROJECT_ROOT / "artifacts" / "sparc"
 SPARC_BASE_URL = "https://astroweb.case.edu/SPARC/"
 
 COLUMN_ALIASES = {

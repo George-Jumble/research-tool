@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 
 # Keep existing default log destination while avoiding duplicate root handlers.
 logging.basicConfig(
@@ -55,11 +56,138 @@ def _runtime_config_from_params(
 class DataManager:
     """Fetch data from cache, mock generator, or source files."""
 
-    def __init__(self, use_mock: bool = False, cache_dir: str | os.PathLike[str] = "./cache"):
+    def __init__(
+        self,
+        use_mock: bool = False,
+        cache_dir: str | os.PathLike[str] = "./cache",
+        sparc_archive_path: str | os.PathLike[str] = ".tav_project_staging/finishedA/",
+    ):
         self.use_mock = bool(use_mock)
         self.cache_dir = Path(cache_dir).expanduser().resolve()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.archive_path = Path(sparc_archive_path).expanduser().resolve()
+        self.cache: dict[str, Any] = {}
         logger.info("Initialized DataManager (Mode: %s)", "Mock" if self.use_mock else "Real")
+
+    def fetch_sparc_catalog(self) -> pd.DataFrame:
+        """Fetch the SPARC galaxy kinematic catalog for diagnostics/integration workflows."""
+        if self.use_mock:
+            # Mock key outliers and near-theory points for deterministic diagnostics.
+            return pd.DataFrame(
+                {
+                    "galaxy_id": [
+                        "CamB",
+                        "F561-1",
+                        "NGC0891",
+                        "NGC3953",
+                        "NGC3741",
+                        "UGC01234",
+                    ],
+                    "r_shadow_baryon_obs": [0.02, 0.04, 0.05, 0.03, 6.57, 5.18],
+                    "delta_phi_est": [2.4, 2.1, 1.9, 2.0, 0.1, 0.3],
+                    "dist_to_filament_Mpc": [0.8, 1.1, 0.9, 1.2, 8.5, 4.2],
+                    "xray_excess_lum": [1.4e40, 1.1e40, 2.3e40, 1.8e40, 1.2e38, 5.0e38],
+                }
+            )
+
+        return self._load_real_sparc()
+
+    def cross_match_cosmic_web(
+        self,
+        sparc_df: pd.DataFrame,
+        lambda_tav: float = 7.0,
+    ) -> pd.DataFrame:
+        """Assign cosmic-web environment tags from transverse filament distance."""
+        if "dist_to_filament_Mpc" not in sparc_df.columns:
+            raise ValueError("SPARC frame missing required column: dist_to_filament_Mpc")
+
+        frame = sparc_df.copy()
+        conditions = [
+            frame["dist_to_filament_Mpc"] < 0.3 * float(lambda_tav),
+            frame["dist_to_filament_Mpc"] > 1.2 * float(lambda_tav),
+        ]
+        choices = ["FILAMENT_1D", "VOID_3D"]
+        frame["environment"] = np.select(conditions, choices, default="FIELD")
+        return frame
+
+    def load_processed_sparc_batch(self) -> pd.DataFrame:
+        """Load processed SPARC batch rows from the staged archive path."""
+        if not self.archive_path.exists():
+            raise FileNotFoundError(
+                f"SPARC archive path not found: {self.archive_path}. "
+                "Update sparc_archive_path in DataManager initialization."
+            )
+
+        csv_files = sorted(self.archive_path.rglob("*.csv"))
+        if not csv_files:
+            raise FileNotFoundError(f"No CSV files found in SPARC archive: {self.archive_path}")
+
+        frames: list[pd.DataFrame] = []
+        for file_path in csv_files:
+            try:
+                frame = pd.read_csv(file_path)
+            except Exception:
+                logger.warning("Skipping unreadable SPARC batch file: %s", file_path)
+                continue
+            if not frame.empty:
+                frames.append(frame)
+
+        if not frames:
+            raise ValueError(f"No readable non-empty CSV batch files in: {self.archive_path}")
+
+        merged = pd.concat(frames, ignore_index=True)
+
+        id_aliases = ["galaxy_id", "ID", "id", "galaxy", "name"]
+        shear_aliases = ["shear_metric", "shear", "domain_shear", "shear_score"]
+
+        id_col = next((c for c in id_aliases if c in merged.columns), None)
+        if id_col is None:
+            raise ValueError("Processed SPARC batch missing galaxy identifier column.")
+
+        shear_col = next((c for c in shear_aliases if c in merged.columns), None)
+        if shear_col is None:
+            raise ValueError("Processed SPARC batch missing shear metric column.")
+
+        out = merged.rename(columns={id_col: "galaxy_id", shear_col: "shear_metric"}).copy()
+        out["galaxy_id"] = out["galaxy_id"].astype(str).str.strip()
+        out["shear_metric"] = pd.to_numeric(out["shear_metric"], errors="coerce")
+        out = out.dropna(subset=["galaxy_id", "shear_metric"])
+        if out.empty:
+            raise ValueError("Processed SPARC batch contained no valid galaxy_id/shear_metric rows.")
+        return out.reset_index(drop=True)
+
+    def cross_match_environment_and_xray(
+        self,
+        sparc_df: pd.DataFrame,
+        lambda_tav: float = 7.0,
+    ) -> pd.DataFrame:
+        """Cross-match SPARC rows with mock environment classes and diffuse X-ray excess."""
+        frame = sparc_df.copy()
+        if "shear_metric" not in frame.columns:
+            raise ValueError("SPARC frame missing required column: shear_metric")
+
+        frame["shear_metric"] = pd.to_numeric(frame["shear_metric"], errors="coerce")
+        frame = frame.dropna(subset=["shear_metric"])
+        if frame.empty:
+            raise ValueError("SPARC frame has no valid shear_metric values.")
+
+        # Keep lambda_tav in signature for consistency with existing cosmic-web APIs.
+        _ = float(lambda_tav)
+
+        conditions = [
+            frame["shear_metric"] > 4.5,
+            frame["shear_metric"] < 1.5,
+        ]
+        choices = ["FILAMENT_1D", "VOID_3D"]
+        frame["environment"] = np.select(conditions, choices, default="FIELD")
+
+        rng = np.random.default_rng()
+        frame["xray_excess_lum"] = np.where(
+            frame["environment"] == "FILAMENT_1D",
+            rng.normal(2.0e40, 0.5e40, len(frame)),
+            rng.normal(5.0e38, 1.0e38, len(frame)),
+        )
+        return frame
 
     def fetch(
         self,
@@ -135,6 +263,58 @@ class DataManager:
                 return tree.arrays(library="np")
 
         raise ValueError(f"Unsupported source format: {suffix}")
+
+    def _load_real_sparc(self) -> pd.DataFrame:
+        """Load and normalize real SPARC catalog rows for cross-domain diagnostics."""
+        from menus.astronomical.sparc.fetcher import fetch_mass_models_table
+
+        raw = fetch_mass_models_table()
+        if raw is None or raw.empty:
+            raise ValueError("SPARC catalog is empty or unavailable.")
+
+        frame = raw.copy()
+        # Expected SPARC mass-model columns from the fetcher parser.
+        if "ID" not in frame.columns:
+            raise ValueError("SPARC catalog missing expected ID column.")
+
+        for col in ("Vobs", "Vgas", "Vdisk", "Vbul"):
+            if col not in frame.columns:
+                frame[col] = 0.0
+            frame[col] = pd.to_numeric(frame[col], errors="coerce")
+
+        v_sq_obs = frame["Vobs"].to_numpy(dtype=float) ** 2
+        v_sq_baryon = (
+            frame["Vgas"].to_numpy(dtype=float) ** 2
+            + frame["Vdisk"].to_numpy(dtype=float) ** 2
+            + frame["Vbul"].to_numpy(dtype=float) ** 2
+        )
+        v_sq_shadow = np.maximum(0.0, v_sq_obs - v_sq_baryon)
+        ratio = v_sq_shadow / np.maximum(v_sq_baryon, 1e-6)
+        frame["r_shadow_baryon_obs"] = ratio
+
+        grouped = (
+            frame.groupby("ID", as_index=False)["r_shadow_baryon_obs"]
+            .mean()
+            .rename(columns={"ID": "galaxy_id"})
+        )
+
+        # Placeholders retained for later enrichments via external cross-match catalogs.
+        grouped["delta_phi_est"] = np.nan
+        grouped["dist_to_filament_Mpc"] = np.nan
+        grouped["xray_excess_lum"] = np.nan
+
+        ordered_cols = [
+            "galaxy_id",
+            "r_shadow_baryon_obs",
+            "delta_phi_est",
+            "dist_to_filament_Mpc",
+            "xray_excess_lum",
+        ]
+        out = grouped[ordered_cols]
+        out = out.dropna(subset=["galaxy_id", "r_shadow_baryon_obs"])
+        if out.empty:
+            raise ValueError("SPARC normalization produced no valid rows.")
+        return out.reset_index(drop=True)
 
 
 def get_runtime_data_manager(

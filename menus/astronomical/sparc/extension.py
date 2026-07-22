@@ -7,13 +7,22 @@ Repository pulls populate that directory; graphics display after curses exits.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterator, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
-from menus.astronomical.sparc.analyzer import SPARCAnalyzer, THEORY_RATIO_TARGET
+from menus.astronomical.sparc.analyzer import (
+    SPARCAnalyzer,
+    TauSuperblockSolver,
+    THEORY_RATIO_TARGET,
+    calibrate_weighting_schema,
+    run_diagnostic_sweep,
+)
 from tav_shared.batch_ledger import (
     SPARC_BATCH_DONE,
     append_done_entries,
@@ -31,7 +40,15 @@ from menus.astronomical.sparc.fetcher import (
 )
 from tav_shared.run_output import parse_batch_limit, parse_show_graphics
 from menus.astronomical.sparc.superblock import ARTIFACTS_DIR, SPARCData
+from tav_shared.ingestion.data_manager import (
+    DATA_MANAGER_LEGACY_PARAM_KEY,
+    DATA_MANAGER_PARAM_KEY,
+    get_runtime_data_manager,
+)
 from tav_shared.llm_analysis import analyze_run_output as query_llm_analysis
+
+_LAST_SHEAR_RESULTS: dict[str, dict[str, float]] = {}
+_ACTIVE_PIPELINE_WEIGHTS: dict[str, float] = {}
 
 SUBMENU_TITLE = "SPARC"
 MODULE_TAG = "SPARC"
@@ -43,6 +60,9 @@ MENU_ACTIONS = [
     "Empirical Plot + MCMC Sweep",
     "Rotation Curve + Shadow Fit",
     "Mass Ratio Report (5.2 check)",
+    "Run Domain Shear Diagnostic",
+    "Apply Harmonic Damping Calibration",
+    "Initiate Holdout Matrix Test",
     "Full SPARC Analysis",
     "Emergent DM Prediction",
     "Fit Emergent DM Parameters",
@@ -56,6 +76,9 @@ _ACTION_KEYS = {
     "Empirical Plot + MCMC Sweep": "empirical_mcmc",
     "Rotation Curve + Shadow Fit": "rotation_curve",
     "Mass Ratio Report (5.2 check)": "mass_ratio",
+    "Run Domain Shear Diagnostic": "domain_shear_diagnostic",
+    "Apply Harmonic Damping Calibration": "harmonic_damping_calibration",
+    "Initiate Holdout Matrix Test": "holdout_matrix_test",
     "Full SPARC Analysis": "full_analysis",
     "Emergent DM Prediction": "predict",
     "Fit Emergent DM Parameters": "fit",
@@ -205,6 +228,7 @@ def _run_analyzer_for_galaxy(
     action: str,
     galaxy: str,
     csv_path: Path,
+    run_output_dir: Path | None = None,
     show_plots: bool = True,
 ) -> None:
     analyzer = SPARCAnalyzer(str(csv_path))
@@ -217,7 +241,16 @@ def _run_analyzer_for_galaxy(
     if action in {"rotation_curve", "full_analysis", "empirical_mcmc"}:
         from tav_shared.artifact_paths import TestSlug, artifact_path, compose_dataset_slug
 
-        plot_path = artifact_path(TestSlug.SPARC, compose_dataset_slug(galaxy, "rotation"), "plot", "png")
+        if run_output_dir is not None:
+            run_output_dir.mkdir(parents=True, exist_ok=True)
+            plot_path = run_output_dir / f"{galaxy}_rotation.png"
+        else:
+            plot_path = artifact_path(
+                TestSlug.SPARC,
+                compose_dataset_slug(galaxy, "rotation"),
+                "plot",
+                "png",
+            )
         analyzer.plot_rotation_curve(galaxy, show=show_plots, save_path=str(plot_path))
         print(f"[TAV ENGINE] Rotation curve saved: {plot_path}")
         if show_plots:
@@ -237,7 +270,12 @@ def _run_analyzer_for_galaxy(
             print("[STATISTICAL NOTE] Ratio deviates from 5.2 — inspect domain shear / phase alignment.")
 
 
-def _run_empirical_mcmc_for_galaxy(galaxy: str, csv_path: Path, show_plots: bool = True) -> None:
+def _run_empirical_mcmc_for_galaxy(
+    galaxy: str,
+    csv_path: Path,
+    run_output_dir: Path | None = None,
+    show_plots: bool = True,
+) -> None:
     from tav_shared import mcmc_engine, require_topology
 
     analyzer = SPARCAnalyzer(str(csv_path))
@@ -251,7 +289,12 @@ def _run_empirical_mcmc_for_galaxy(galaxy: str, csv_path: Path, show_plots: bool
     print(f"[TAV ENGINE] SPARC shadow/baryon ratio: {ratio:.4f} (theory target {THEORY_RATIO_TARGET})")
 
     _run_analyzer_for_galaxy(
-        "Empirical Plot + MCMC Sweep", "empirical_mcmc", galaxy, csv_path, show_plots
+        "Empirical Plot + MCMC Sweep",
+        "empirical_mcmc",
+        galaxy,
+        csv_path,
+        run_output_dir,
+        show_plots,
     )
 
     dev, is_anomalous = require_topology.calculate_topological_correlation(df, domain="SPARC")
@@ -284,8 +327,11 @@ def _run_superblock_for_galaxy(
     action: str,
     galaxy: str,
     options: dict,
+    run_output_dir: Path | None = None,
     show_plots: bool = True,
 ) -> None:
+    from tav_shared.artifact_paths import TestSlug, artifact_path, compose_dataset_slug
+
     sparc = SPARCData(data_dir=DEFAULT_DATA_DIR)
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -299,7 +345,16 @@ def _run_superblock_for_galaxy(
         if theory_curve.empty:
             print(f"[ERROR] No rotation curve data for {galaxy}")
             return
-        plot_path = artifact_path(TestSlug.SPARC, compose_dataset_slug(galaxy, "emergent_dm"), "plot", "png")
+        if run_output_dir is not None:
+            run_output_dir.mkdir(parents=True, exist_ok=True)
+            plot_path = run_output_dir / f"{galaxy}_emergent_dm.png"
+        else:
+            plot_path = artifact_path(
+                TestSlug.SPARC,
+                compose_dataset_slug(galaxy, "emergent_dm"),
+                "plot",
+                "png",
+            )
         sparc.plot_rotation_curve(
             galaxy, theory_curve=theory_curve, show=show_plots, save_path=str(plot_path)
         )
@@ -321,7 +376,16 @@ def _run_superblock_for_galaxy(
             theory_curve = sparc.predict_emergent_dm_velocity(
                 galaxy, beta2=fit["beta2"], phase_offset=fit["phase_offset"]
             )
-            plot_path = artifact_path(TestSlug.SPARC, compose_dataset_slug(galaxy, "fit"), "plot", "png")
+            if run_output_dir is not None:
+                run_output_dir.mkdir(parents=True, exist_ok=True)
+                plot_path = run_output_dir / f"{galaxy}_fit.png"
+            else:
+                plot_path = artifact_path(
+                    TestSlug.SPARC,
+                    compose_dataset_slug(galaxy, "fit"),
+                    "plot",
+                    "png",
+                )
             sparc.plot_rotation_curve(
                 galaxy, theory_curve=theory_curve, show=show_plots, save_path=str(plot_path)
             )
@@ -341,7 +405,16 @@ def _run_superblock_for_galaxy(
         theory_curve = sparc.predict_emergent_dm_velocity(
             galaxy, beta2=beta2, phase_offset=phase, theory=theory
         )
-        plot_path = artifact_path(TestSlug.SPARC, compose_dataset_slug(galaxy, "full_demo"), "plot", "png")
+        if run_output_dir is not None:
+            run_output_dir.mkdir(parents=True, exist_ok=True)
+            plot_path = run_output_dir / f"{galaxy}_full_demo.png"
+        else:
+            plot_path = artifact_path(
+                TestSlug.SPARC,
+                compose_dataset_slug(galaxy, "full_demo"),
+                "plot",
+                "png",
+            )
         sparc.plot_rotation_curve(
             galaxy, theory_curve=theory_curve, show=show_plots, save_path=str(plot_path)
         )
@@ -365,8 +438,14 @@ def _run_batch(action: str, selection: str, options: dict, show_plots: bool = Tr
     if selected:
         print(f"[TAV ENGINE] Selected datasets: {', '.join(sorted(selected))}")
 
+    run_stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    run_output_dir = ARTIFACTS_DIR / f"sparc_run_{run_stamp}"
+    run_output_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[TAV ENGINE] SPARC image output folder: {run_output_dir}")
+
     processed_paths: list[Path] = []
     completed_ids: list[str] = []
+    mass_ratio_map: dict[str, float] = {}
     processed = 0
     for galaxy, csv_path in (
         _iter_local_batch(limit=limit, selected=selected, force_rescan=force_rescan) or []
@@ -377,14 +456,29 @@ def _run_batch(action: str, selection: str, options: dict, show_plots: bool = Tr
         print(f"{'=' * 60}")
 
         if action == "empirical_mcmc":
-            _run_empirical_mcmc_for_galaxy(galaxy, csv_path, show_plots)
+            _run_empirical_mcmc_for_galaxy(galaxy, csv_path, run_output_dir, show_plots)
         elif action in {"rotation_curve", "mass_ratio", "full_analysis"}:
-            _run_analyzer_for_galaxy(selection, action, galaxy, csv_path, show_plots)
+            _run_analyzer_for_galaxy(
+                selection,
+                action,
+                galaxy,
+                csv_path,
+                run_output_dir,
+                show_plots,
+            )
         elif action in {"predict", "fit", "full_demo"}:
             print(f"\n[TAV ENGINE] SPARC Superblock — {selection}")
-            _run_superblock_for_galaxy(action, galaxy, options, show_plots)
+            _run_superblock_for_galaxy(action, galaxy, options, run_output_dir, show_plots)
         else:
             break
+
+        if action in {"mass_ratio", "full_analysis", "empirical_mcmc"}:
+            try:
+                analyzer = SPARCAnalyzer(str(csv_path))
+                mass_ratio_map[galaxy] = analyzer.calculate_mass_ratio(galaxy)
+            except Exception as exc:
+                print(f"[DIAGNOSTIC] Skipping {galaxy}: {exc}")
+
         processed_paths.append(csv_path)
         completed_ids.append(galaxy)
 
@@ -394,6 +488,16 @@ def _run_batch(action: str, selection: str, options: dict, show_plots: bool = Tr
 
     if processed:
         print(f"\n[TAV ENGINE] Batch complete: {processed} galaxies from {LOCAL_DATA_GLOB}")
+        if mass_ratio_map:
+            print("[DIAGNOSTIC] Running Tav-Superblock domain shear sweep...")
+            shear_map = run_diagnostic_sweep(mass_ratio_map)
+            baseline_weights = {name: 1.0 for name in mass_ratio_map}
+            calibrated = calibrate_weighting_schema(baseline_weights, shear_map)
+            avg_calibrated = float(np.mean(list(calibrated.values()))) if calibrated else 1.0
+            print(
+                "[DIAGNOSTIC] Harmonic damping applied "
+                f"({len(calibrated)} galaxies, mean calibrated weight={avg_calibrated:.6f})"
+            )
         if str(options.get("archive_after_run", "yes")).strip().lower() not in {
             "no",
             "n",
@@ -452,6 +556,379 @@ def _run_test_suite(options: dict) -> None:
     print(f"[TAV ENGINE] Suite report saved: {out_path}")
 
 
+def _diagnostic_artifact_path(stem: str) -> Path:
+    diag_dir = ARTIFACTS_DIR / "diagnostics"
+    diag_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    return diag_dir / f"{stem}_{stamp}.json"
+
+
+def save_shear_map(shear_results: dict[str, dict[str, float]]) -> Path:
+    out_path = _diagnostic_artifact_path("sparc_shear_map")
+    payload = {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "n_galaxies": len(shear_results),
+        "shear_map": shear_results,
+    }
+    out_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    return out_path
+
+
+def save_calibrated_weights(calibrated_weights: dict[str, float]) -> Path:
+    out_path = _diagnostic_artifact_path("sparc_calibrated_weights")
+    payload = {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "n_galaxies": len(calibrated_weights),
+        "weights": calibrated_weights,
+    }
+    out_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    return out_path
+
+
+def _parse_outlier_galaxies(
+    options: dict,
+    shear_map: dict[str, dict[str, float]],
+) -> list[str]:
+    explicit = [
+        item.strip()
+        for item in str(options.get("outlier_galaxies", "")).split(",")
+        if item.strip()
+    ]
+    threshold = _parse_float(options.get("outlier_shear_threshold", ""), 5.0)
+    top_k = max(_parse_int(options.get("outlier_top_k", ""), 6), 1)
+
+    ranked = sorted(
+        (
+            (name, float((payload or {}).get("shear", np.nan)))
+            for name, payload in shear_map.items()
+        ),
+        key=lambda item: item[1],
+        reverse=True,
+    )
+    threshold_hits = [name for name, shear in ranked if np.isfinite(shear) and shear >= threshold]
+    ranked_top = [name for name, _ in ranked[:top_k]]
+
+    merged: list[str] = []
+    for item in [*explicit, *threshold_hits, *ranked_top]:
+        if item not in merged:
+            merged.append(item)
+    return merged
+
+
+def _cross_match_outlier_membership(
+    options: dict,
+    ratio_map: dict[str, float],
+    shear_map: dict[str, dict[str, float]],
+) -> None:
+    if not ratio_map or not shear_map:
+        return
+
+    manager = options.get(DATA_MANAGER_PARAM_KEY) or options.get(DATA_MANAGER_LEGACY_PARAM_KEY)
+    if manager is None:
+        manager = get_runtime_data_manager(options)
+
+    outlier_ids = _parse_outlier_galaxies(options, shear_map)
+    if not outlier_ids:
+        print("[DIAGNOSTIC] No outlier galaxies selected for cosmic-web cross-match.")
+        return
+
+    try:
+        frame = manager.fetch_sparc_catalog()
+    except Exception as exc:
+        print(f"[DIAGNOSTIC] Outlier cosmic-web cross-match skipped: {exc}")
+        return
+
+    if frame is None or frame.empty or "galaxy_id" not in frame.columns:
+        print("[DIAGNOSTIC] Outlier cosmic-web cross-match skipped: catalog unavailable.")
+        return
+
+    lambda_tav = _parse_float(options.get("lambda_tav", ""), 7.0)
+    if "dist_to_filament_Mpc" in frame.columns:
+        try:
+            frame = manager.cross_match_cosmic_web(frame, lambda_tav=lambda_tav)
+        except Exception as exc:
+            print(f"[DIAGNOSTIC] Cosmic-web tagging failed for outliers: {exc}")
+
+    subset = frame[frame["galaxy_id"].astype(str).isin(outlier_ids)].copy()
+    if subset.empty:
+        print("[DIAGNOSTIC] Outlier cosmic-web cross-match found no overlapping galaxies.")
+        return
+
+    rows: list[dict[str, Any]] = []
+    print("[DIAGNOSTIC] Outlier cosmic-web membership (filament/void):")
+    for _, row in subset.iterrows():
+        galaxy = str(row.get("galaxy_id", "")).strip()
+        env = str(row.get("environment", "FIELD") or "FIELD")
+        dist = row.get("dist_to_filament_Mpc", np.nan)
+        ratio = float(ratio_map.get(galaxy, np.nan))
+        shear = float((shear_map.get(galaxy) or {}).get("shear", np.nan))
+
+        dist_txt = f"{float(dist):.3f}" if np.isfinite(dist) else "nan"
+        ratio_txt = f"{ratio:.4f}" if np.isfinite(ratio) else "nan"
+        shear_txt = f"{shear:.4f}" if np.isfinite(shear) else "nan"
+        print(
+            "  "
+            f"{galaxy}: env={env} | dist_to_filament_Mpc={dist_txt} | "
+            f"ratio={ratio_txt} | shear={shear_txt}"
+        )
+
+        rows.append(
+            {
+                "galaxy_id": galaxy,
+                "environment": env,
+                "dist_to_filament_Mpc": None if not np.isfinite(dist) else float(dist),
+                "r_shadow_baryon_obs": None if not np.isfinite(ratio) else ratio,
+                "shear": None if not np.isfinite(shear) else shear,
+            }
+        )
+
+    out_path = _diagnostic_artifact_path("sparc_outlier_cosmic_web_membership")
+    payload = {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "lambda_tav": lambda_tav,
+        "n_outliers": len(rows),
+        "outliers": rows,
+    }
+    out_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    print(f"[DIAGNOSTIC] Outlier membership map saved: {out_path}")
+
+
+def apply_to_pipeline(calibrated_weights: dict[str, float]) -> None:
+    """Persist active weighting map in-memory for follow-up SPARC diagnostics."""
+    global _ACTIVE_PIPELINE_WEIGHTS
+    _ACTIVE_PIPELINE_WEIGHTS = dict(calibrated_weights)
+    print(
+        "[DIAGNOSTIC] Applied calibrated weights to active SPARC pipeline context "
+        f"(n={len(_ACTIVE_PIPELINE_WEIGHTS)})."
+    )
+
+
+def _collect_mass_ratio_map(options: dict) -> tuple[dict[str, float], list[str]]:
+    """Collect per-galaxy shadow/baryon ratios from catalog API or local batch slice."""
+    source = str(options.get("diagnostic_source", "catalog")).strip().lower()
+    if source == "catalog":
+        manager = options.get(DATA_MANAGER_PARAM_KEY) or options.get(
+            DATA_MANAGER_LEGACY_PARAM_KEY
+        )
+        if manager is None:
+            manager = get_runtime_data_manager(options)
+        try:
+            frame = manager.fetch_sparc_catalog()
+            if frame is None or frame.empty:
+                raise ValueError("SPARC catalog returned no rows.")
+            if _yes(options.get("cross_match_cosmic_web", "yes")):
+                if "dist_to_filament_Mpc" in frame.columns:
+                    lambda_tav = _parse_float(options.get("lambda_tav", ""), 7.0)
+                    frame = manager.cross_match_cosmic_web(frame, lambda_tav=lambda_tav)
+
+            if "galaxy_id" not in frame.columns or "r_shadow_baryon_obs" not in frame.columns:
+                raise ValueError(
+                    "SPARC catalog missing required columns: galaxy_id, r_shadow_baryon_obs"
+                )
+
+            if {
+                "dist_to_filament_Mpc",
+                "delta_phi_est",
+            }.issubset(frame.columns):
+                solver = TauSuperblockSolver(
+                    lambda_tav=_parse_float(options.get("lambda_tav", ""), 7.0),
+                    r_baseline=_parse_float(
+                        options.get("solver_r_baseline", ""), THEORY_RATIO_TARGET
+                    ),
+                )
+                f_align = _parse_float(options.get("solver_f_align", ""), 1.0)
+                epsilon_tep = _parse_float(options.get("solver_epsilon_tep", ""), 0.15)
+                omega = _parse_float(options.get("solver_omega", ""), 1.0)
+
+                r_local = pd.to_numeric(frame["dist_to_filament_Mpc"], errors="coerce").to_numpy()
+                delta_phi = pd.to_numeric(frame["delta_phi_est"], errors="coerce").fillna(0.0).to_numpy()
+                if "shear_metric" in frame.columns:
+                    shear_penalty = pd.to_numeric(frame["shear_metric"], errors="coerce").fillna(0.0).to_numpy()
+                else:
+                    ratio_vals = pd.to_numeric(
+                        frame.get("r_shadow_baryon_obs", THEORY_RATIO_TARGET),
+                        errors="coerce",
+                    ).fillna(THEORY_RATIO_TARGET)
+                    shear_penalty = np.abs(ratio_vals.to_numpy() - THEORY_RATIO_TARGET)
+
+                # Explicitly exercise new solver choking path in menu-triggered diagnostics.
+                kappa = solver.simulate_local_kappa(r_local, shear_penalty)
+                frame["kappa_fil"] = kappa
+                frame["r_eff_tsb"] = solver.compute_choked_shadow_ratio(kappa)
+                frame["r_eff_tsb_phase"] = solver.compute_effective_ratio(
+                    r_local,
+                    delta_phi,
+                    f_align=f_align,
+                    epsilon_tep=epsilon_tep,
+                )
+
+                if "xray_excess_lum" in frame.columns:
+                    e_kin = pd.to_numeric(frame["xray_excess_lum"], errors="coerce").fillna(0.0).to_numpy()
+                else:
+                    e_kin = pd.to_numeric(frame["r_shadow_baryon_obs"], errors="coerce").fillna(0.0).to_numpy()
+                frame["delta_e_fluct"] = solver.compute_quench_deficit_heating(
+                    e_kinetic=e_kin,
+                    kappa=kappa,
+                    omega=omega,
+                )
+                finite_kappa = np.isfinite(frame["kappa_fil"].to_numpy())
+                finite_reff = np.isfinite(frame["r_eff_tsb"].to_numpy())
+                if finite_kappa.any() and finite_reff.any():
+                    print(
+                        "[DIAGNOSTIC] TauSuperblockSolver summary: "
+                        f"kappa_mean={float(np.nanmean(frame.loc[finite_kappa, 'kappa_fil'])):.4f} | "
+                        f"r_eff_choked_mean={float(np.nanmean(frame.loc[finite_reff, 'r_eff_tsb'])):.4f}"
+                    )
+
+            ratio_map: dict[str, float] = {}
+            for row in frame.itertuples(index=False):
+                galaxy = str(getattr(row, "galaxy_id", "")).strip()
+                ratio = getattr(row, "r_shadow_baryon_obs", np.nan)
+                if not galaxy or not np.isfinite(ratio):
+                    continue
+                ratio_map[galaxy] = float(ratio)
+                env = getattr(row, "environment", "")
+                if env:
+                    print(
+                        "[DIAGNOSTIC] "
+                        f"Galaxy: {galaxy} | Observed ratio: {ratio_map[galaxy]:.4f} | "
+                        f"Env: {env}"
+                    )
+                else:
+                    print(
+                        "[DIAGNOSTIC] "
+                        f"Galaxy: {galaxy} | Observed ratio: {ratio_map[galaxy]:.4f}"
+                    )
+            if ratio_map:
+                return ratio_map, []
+        except Exception as exc:
+            print(f"[DIAGNOSTIC] Catalog mode failed ({exc}); falling back to local batch CSVs.")
+
+    limit = parse_batch_limit(options, default=0)
+    selected = _parse_selected_datasets(options)
+    force_rescan = _yes(options.get("force_rescan", ""))
+    ratio_map: dict[str, float] = {}
+    completed_ids: list[str] = []
+
+    for galaxy, csv_path in (
+        _iter_local_batch(limit=limit, selected=selected, force_rescan=force_rescan) or []
+    ):
+        try:
+            analyzer = SPARCAnalyzer(str(csv_path))
+            ratio_map[galaxy] = analyzer.calculate_mass_ratio(galaxy)
+            completed_ids.append(galaxy)
+            print(
+                "[DIAGNOSTIC] "
+                f"Galaxy: {galaxy} | Observed ratio: {ratio_map[galaxy]:.4f}"
+            )
+        except Exception as exc:
+            print(f"[DIAGNOSTIC] Skipping {galaxy}: {exc}")
+
+    if completed_ids:
+        append_done_entries(SPARC_BATCH_DONE, completed_ids)
+    return ratio_map, completed_ids
+
+
+def _run_domain_shear_diagnostic(options: dict) -> None:
+    global _LAST_SHEAR_RESULTS
+    ratio_map, completed_ids = _collect_mass_ratio_map(options)
+    if not ratio_map:
+        print("[DIAGNOSTIC] No valid galaxies available for domain shear diagnostic.")
+        return
+    shear_map = run_diagnostic_sweep(ratio_map)
+    _LAST_SHEAR_RESULTS = dict(shear_map)
+    shear_vals = [item["shear"] for item in shear_map.values()]
+    shear_path = save_shear_map(shear_map)
+    _cross_match_outlier_membership(options, ratio_map, shear_map)
+    print(
+        "[DIAGNOSTIC] Domain shear summary: "
+        f"n={len(shear_vals)} | mean={float(np.mean(shear_vals)):.4f} | "
+        f"max={float(np.max(shear_vals)):.4f}"
+    )
+    print(f"[DIAGNOSTIC] Shear map saved: {shear_path}")
+    if completed_ids:
+        print(f"[TAV ENGINE] Recorded {len(completed_ids)} galaxy(ies) in {SPARC_BATCH_DONE}")
+
+
+def _run_harmonic_damping_calibration(options: dict) -> None:
+    ratio_map, completed_ids = _collect_mass_ratio_map(options)
+    if not ratio_map:
+        print("[DIAGNOSTIC] No valid galaxies available for harmonic damping calibration.")
+        return
+
+    baseline_weight = _parse_float(options.get("baseline_weight", ""), 1.0)
+    shear_map = {
+        name: _LAST_SHEAR_RESULTS[name]
+        for name in ratio_map
+        if name in _LAST_SHEAR_RESULTS
+    }
+    if len(shear_map) != len(ratio_map):
+        shear_map = run_diagnostic_sweep(ratio_map)
+
+    baseline_weights = {
+        name: _ACTIVE_PIPELINE_WEIGHTS.get(name, baseline_weight)
+        for name in ratio_map
+    }
+    calibrated = calibrate_weighting_schema(baseline_weights, shear_map)
+    if not calibrated:
+        print("[DIAGNOSTIC] Calibration yielded no weights.")
+        return
+
+    values = np.array(list(calibrated.values()), dtype=float)
+    weights_path = save_calibrated_weights(calibrated)
+    apply_to_pipeline(calibrated)
+    print(
+        "[DIAGNOSTIC] Harmonic damping summary: "
+        f"n={values.size} | mean={float(values.mean()):.6f} | "
+        f"min={float(values.min()):.6f} | max={float(values.max()):.6f}"
+    )
+    print(f"[DIAGNOSTIC] Calibrated weights saved: {weights_path}")
+    for galaxy in sorted(calibrated)[:5]:
+        print(f"  {galaxy}: {calibrated[galaxy]:.6f}")
+    if completed_ids:
+        print(f"[TAV ENGINE] Recorded {len(completed_ids)} galaxy(ies) in {SPARC_BATCH_DONE}")
+
+
+def _run_holdout_matrix_test(options: dict) -> None:
+    ratio_map, completed_ids = _collect_mass_ratio_map(options)
+    if len(ratio_map) < 4:
+        print("[DIAGNOSTIC] Holdout matrix test requires at least 4 galaxies.")
+        return
+
+    holdout_fraction = min(max(_parse_float(options.get("holdout_fraction", ""), 0.2), 0.1), 0.5)
+    n_repeats = max(_parse_int(options.get("holdout_repeats", ""), 25), 1)
+    seed = _parse_int(options.get("holdout_seed", ""), 7)
+    rng = np.random.default_rng(seed)
+
+    galaxies = np.array(sorted(ratio_map.keys()))
+    ratios = np.array([ratio_map[name] for name in galaxies], dtype=float)
+    holdout_size = max(1, int(round(galaxies.size * holdout_fraction)))
+
+    drift_vals: list[float] = []
+    for _ in range(n_repeats):
+        perm = rng.permutation(galaxies.size)
+        test_idx = perm[:holdout_size]
+        train_idx = perm[holdout_size:]
+        if train_idx.size == 0:
+            continue
+        train_mean = float(np.mean(ratios[train_idx]))
+        test_mean = float(np.mean(ratios[test_idx]))
+        drift_vals.append(abs(train_mean - test_mean))
+
+    if not drift_vals:
+        print("[DIAGNOSTIC] Holdout matrix test could not compute train/test drift.")
+        return
+
+    drift = np.array(drift_vals, dtype=float)
+    print(
+        "[DIAGNOSTIC] Holdout matrix summary: "
+        f"n={drift.size} | holdout_fraction={holdout_fraction:.2f} | "
+        f"mean_drift={float(drift.mean()):.4f} | p95_drift={float(np.percentile(drift, 95)):.4f}"
+    )
+    if completed_ids:
+        print(f"[TAV ENGINE] Recorded {len(completed_ids)} galaxy(ies) in {SPARC_BATCH_DONE}")
+
+
 # =============================================================================
 # BLOCK: Entry form — fields
 # =============================================================================
@@ -503,6 +980,199 @@ def entry_fields(action: str) -> list[dict]:
                 "hint": "e.g. NGC3198",
             },
         ]
+    if action == "Run Domain Shear Diagnostic":
+        return [
+            *SPARC_RUN_FIELDS,
+            {
+                "key": "diagnostic_source",
+                "label": "Diagnostic source",
+                "default": "catalog",
+                "required": False,
+                "hint": "catalog = DataManager API | local_batch = pending CSV slice",
+                "choices": ["catalog", "local_batch"],
+            },
+            {
+                "key": "cross_match_cosmic_web",
+                "label": "Cross-match cosmic web",
+                "default": "yes",
+                "required": False,
+                "hint": "Adds environment tags when filament distance exists",
+                "choices": ["no", "yes"],
+            },
+            {
+                "key": "lambda_tav",
+                "label": "lambda_tav",
+                "default": "7.0",
+                "required": False,
+                "hint": "Scale (Mpc) for FILAMENT/FIELD/VOID tagging",
+            },
+            {
+                "key": "solver_r_baseline",
+                "label": "Solver baseline ratio",
+                "default": "5.2",
+                "required": False,
+                "hint": "TauSuperblockSolver R_baseline",
+            },
+            {
+                "key": "solver_f_align",
+                "label": "Solver f_align",
+                "default": "1.0",
+                "required": False,
+                "hint": "Alignment multiplier for R_eff",
+            },
+            {
+                "key": "solver_epsilon_tep",
+                "label": "Solver epsilon_tep",
+                "default": "0.15",
+                "required": False,
+                "hint": "Phase-slip penalty coefficient",
+            },
+            {
+                "key": "solver_omega",
+                "label": "Solver omega",
+                "default": "1.0",
+                "required": False,
+                "hint": "Quench-deficit heating exponent scale",
+            },
+        ]
+    if action == "Apply Harmonic Damping Calibration":
+        return [
+            *SPARC_RUN_FIELDS,
+            {
+                "key": "diagnostic_source",
+                "label": "Diagnostic source",
+                "default": "catalog",
+                "required": False,
+                "hint": "catalog = DataManager API | local_batch = pending CSV slice",
+                "choices": ["catalog", "local_batch"],
+            },
+            {
+                "key": "cross_match_cosmic_web",
+                "label": "Cross-match cosmic web",
+                "default": "yes",
+                "required": False,
+                "hint": "Adds environment tags when filament distance exists",
+                "choices": ["no", "yes"],
+            },
+            {
+                "key": "lambda_tav",
+                "label": "lambda_tav",
+                "default": "7.0",
+                "required": False,
+                "hint": "Scale (Mpc) for FILAMENT/FIELD/VOID tagging",
+            },
+            {
+                "key": "solver_r_baseline",
+                "label": "Solver baseline ratio",
+                "default": "5.2",
+                "required": False,
+                "hint": "TauSuperblockSolver R_baseline",
+            },
+            {
+                "key": "solver_f_align",
+                "label": "Solver f_align",
+                "default": "1.0",
+                "required": False,
+                "hint": "Alignment multiplier for R_eff",
+            },
+            {
+                "key": "solver_epsilon_tep",
+                "label": "Solver epsilon_tep",
+                "default": "0.15",
+                "required": False,
+                "hint": "Phase-slip penalty coefficient",
+            },
+            {
+                "key": "solver_omega",
+                "label": "Solver omega",
+                "default": "1.0",
+                "required": False,
+                "hint": "Quench-deficit heating exponent scale",
+            },
+            {
+                "key": "baseline_weight",
+                "label": "Baseline weight",
+                "default": "1.0",
+                "required": False,
+                "hint": "Initial gamma_i before damping",
+            },
+        ]
+    if action == "Initiate Holdout Matrix Test":
+        return [
+            *SPARC_RUN_FIELDS,
+            {
+                "key": "diagnostic_source",
+                "label": "Diagnostic source",
+                "default": "catalog",
+                "required": False,
+                "hint": "catalog = DataManager API | local_batch = pending CSV slice",
+                "choices": ["catalog", "local_batch"],
+            },
+            {
+                "key": "cross_match_cosmic_web",
+                "label": "Cross-match cosmic web",
+                "default": "yes",
+                "required": False,
+                "hint": "Adds environment tags when filament distance exists",
+                "choices": ["no", "yes"],
+            },
+            {
+                "key": "lambda_tav",
+                "label": "lambda_tav",
+                "default": "7.0",
+                "required": False,
+                "hint": "Scale (Mpc) for FILAMENT/FIELD/VOID tagging",
+            },
+            {
+                "key": "solver_r_baseline",
+                "label": "Solver baseline ratio",
+                "default": "5.2",
+                "required": False,
+                "hint": "TauSuperblockSolver R_baseline",
+            },
+            {
+                "key": "solver_f_align",
+                "label": "Solver f_align",
+                "default": "1.0",
+                "required": False,
+                "hint": "Alignment multiplier for R_eff",
+            },
+            {
+                "key": "solver_epsilon_tep",
+                "label": "Solver epsilon_tep",
+                "default": "0.15",
+                "required": False,
+                "hint": "Phase-slip penalty coefficient",
+            },
+            {
+                "key": "solver_omega",
+                "label": "Solver omega",
+                "default": "1.0",
+                "required": False,
+                "hint": "Quench-deficit heating exponent scale",
+            },
+            {
+                "key": "holdout_fraction",
+                "label": "Holdout fraction",
+                "default": "0.2",
+                "required": False,
+                "hint": "Fraction in test split (0.1-0.5)",
+            },
+            {
+                "key": "holdout_repeats",
+                "label": "Repeat count",
+                "default": "25",
+                "required": False,
+                "hint": "Number of random holdout splits",
+            },
+            {
+                "key": "holdout_seed",
+                "label": "Random seed",
+                "default": "7",
+                "required": False,
+                "hint": "Seed for reproducible split sampling",
+            },
+        ]
     return list(SPARC_RUN_FIELDS)
 
 
@@ -525,6 +1195,21 @@ def entry_instructions(action: str) -> list[str]:
         return [
             f"Downloads one galaxy into {DATASETS_DIR}/{{name}}.csv.",
             "Examples: NGC3198, DDO154, CamB.",
+        ]
+    if action == "Run Domain Shear Diagnostic":
+        return [
+            "Computes per-galaxy observed mass ratio and shear from the 5.2 target.",
+            "Uses batch_limit / force_rescan / selected_datasets controls.",
+        ]
+    if action == "Apply Harmonic Damping Calibration":
+        return [
+            "Runs domain shear sweep, then applies gamma_adj = gamma_i * exp(-shear/313.1).",
+            "Set baseline_weight to control starting gamma_i.",
+        ]
+    if action == "Initiate Holdout Matrix Test":
+        return [
+            "Repeated train/test splits over local SPARC mass-ratio samples.",
+            "Reports mean and p95 drift between holdout and train ratio means.",
         ]
     return [
         "Pull ledger: datasets/sparc/done.txt (repository fetch resume).",
@@ -583,6 +1268,18 @@ def _execute_action(selection: str, action: str, options: dict, show_plots: bool
 
     if action == "suite":
         _run_test_suite(options)
+        return
+
+    if action == "domain_shear_diagnostic":
+        _run_domain_shear_diagnostic(options)
+        return
+
+    if action == "harmonic_damping_calibration":
+        _run_harmonic_damping_calibration(options)
+        return
+
+    if action == "holdout_matrix_test":
+        _run_holdout_matrix_test(options)
         return
 
     if action in _BATCH_ACTIONS:

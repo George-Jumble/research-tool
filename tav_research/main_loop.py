@@ -35,6 +35,11 @@ from tav_research.dataset_manager import (
     DATASET_MANAGER_TAG,
     DATASET_RUN_ACTION,
 )
+from tav_research.external_editor import (
+    EXTERNAL_EDITOR_MENU_LABEL,
+    load_external_editor_command,
+    save_external_editor_command,
+)
 from tav_research.gateway_launcher import (
     GATEWAY_GUI_MENU_LABEL,
     gateway_log_path,
@@ -111,6 +116,47 @@ def main_curses(stdscr):
                 continue
             if selection == CLEAR_CACHE_MENU_LABEL:
                 run_clear_cache_menu(stdscr)
+                continue
+            if selection == EXTERNAL_EDITOR_MENU_LABEL:
+                current = load_external_editor_command()
+                form = show_entry_form(
+                    stdscr,
+                    "Outside Editor",
+                    "Configure default external editor command",
+                    [
+                        {
+                            "key": "outside_editor_command",
+                            "label": "Editor command",
+                            "default": current,
+                            "required": False,
+                            "hint": "Used when the app launches an external text editor.",
+                        }
+                    ],
+                    instructions=[
+                        "Default is featherpad.",
+                        "Set once and it persists across runs; change again anytime.",
+                        "Examples: featherpad, gedit, kate, code --wait",
+                    ],
+                )
+                if form is None:
+                    continue
+                chosen = save_external_editor_command(
+                    str(form.get("outside_editor_command") or "")
+                )
+                stdscr.clear()
+                max_y, max_x = stdscr.getmaxyx()
+                lines = [
+                    "Outside editor updated.",
+                    f"Current default: {chosen}",
+                    "",
+                    "Press any key to return to the menu.",
+                ]
+                for row, line in enumerate(lines):
+                    if row >= max_y - 2:
+                        break
+                    _safe_addstr(stdscr, row, 2, line[: max(1, max_x - 4)])
+                stdscr.refresh()
+                stdscr.getch()
                 continue
             if selection == GATEWAY_GUI_MENU_LABEL:
                 already_running = is_gateway_running()

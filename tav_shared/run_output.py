@@ -12,6 +12,7 @@ from typing import Dict, Iterator, Optional
 
 from tav_shared.artifact_paths import TestSlug, artifact_path, compose_dataset_slug
 from tav_shared.tav_project_paths import ARTIFACTS_ROOT
+from tav_research.external_editor import build_session_output_file, open_in_external_editor
 
 ARTIFACTS_DIR = ARTIFACTS_ROOT
 
@@ -19,20 +20,25 @@ ARTIFACTS_DIR = ARTIFACTS_ROOT
 class _TeeStream:
     """Write stdout to terminal and a log file simultaneously."""
 
-    def __init__(self, terminal, log_file):
+    def __init__(self, terminal, log_file, mirror_file=None):
         self.terminal = terminal
         self.log_file = log_file
+        self.mirror_file = mirror_file
 
     def write(self, data: str) -> int:
         if not data:
             return 0
         self.terminal.write(data)
         self.log_file.write(data)
+        if self.mirror_file is not None:
+            self.mirror_file.write(data)
         return len(data)
 
     def flush(self) -> None:
         self.terminal.flush()
         self.log_file.flush()
+        if self.mirror_file is not None:
+            self.mirror_file.flush()
 
     def isatty(self) -> bool:
         return self.terminal.isatty()
@@ -148,10 +154,13 @@ def capture_run_log(
     header_lines.append("=" * 40)
     header_lines.append("")
 
-    with log_path.open("w", encoding="utf-8") as handle:
+    session_out_dir = ARTIFACTS_ROOT.parent / "session_out"
+    output_file = build_session_output_file(session_out_dir)
+
+    with log_path.open("w", encoding="utf-8") as handle, output_file.open("w", encoding="utf-8") as mirror:
         handle.write("\n".join(header_lines) + "\n")
         handle.flush()
-        tee = _TeeStream(sys.stdout, handle)
+        tee = _TeeStream(sys.stdout, handle, mirror)
         previous = sys.stdout
         sys.stdout = tee
         try:
@@ -167,3 +176,10 @@ def capture_run_log(
             test_label = f"{module_tag}_{action}" if module_tag else action
             print(f"[TAV ENGINE] Test output saved: {log_path}")
             print(f"[TAV ENGINE] Test: {test_label}")
+            print(f"[TAV ENGINE] Session output file: {output_file}")
+            opened = open_in_external_editor(output_file)
+            if not opened:
+                print(
+                    "[TAV ENGINE] Could not open session output with the configured editor. "
+                    "Use 'Choose Outside Editor' in the root menu to update it."
+                )

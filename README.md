@@ -4,6 +4,13 @@ Interactive curses-based research console for the **Tau Universe / Tav-Superbloc
 
 **Entry point:** `research_tool.py`
 
+## Latest upgrade highlights
+
+- **Global fetch enforcement** — shared `DataManager` wiring is now available across runtime dispatch and ingestion validators, with `data_key`-based caching.
+- **Persistent logging policy** — data operations now write to `research_tool.log` for fetch, cache-hit, and failure traceability.
+- **Mock data fallback** — `use_mock` allows pipeline validation when live CERN/DESI sources are unavailable.
+- **Constraint hardening** — resonance-style checks enforce minimum sample-size constraints (e.g., underpowered `n < 8` guards before periodogram paths).
+
 ## Gateway integration
 
 This tree is merged into the Research **LLM Gateway** (`../gateway.py`):

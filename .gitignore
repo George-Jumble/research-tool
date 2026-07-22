@@ -47,9 +47,13 @@ AO2D.root
 
 # Local logs and scratch
 error_log.txt
+research_tool.log
 output
 batch_data.txt
 ignore.txt
+cache/
+session_out/
+.tav_project_staging/
 
 # IDE / OS
 .idea/
