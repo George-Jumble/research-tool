@@ -91,6 +91,8 @@ ACTION_DEFAULT_TARGETS: dict[str, list[str]] = {
     "Analyze CMS NanoAOD": ["cms_nanoaod_dimu"],
     "CMS 7-Fold Muon Tav Analysis": ["cms_nanoaod_dimu"],
     "CMS Full-Dataset 7-Fold Scan": ["cms_nanoaod_dimu"],
+    "ATLAS Open Data Lepton Scan": ["atlas_2lep_data_A"],
+    "Pull ATLAS Open Data (atlasopenmagic)": ["atlas_2lep_data_A"],
     "Run MC Validation Suite": [
         "cms_nanoaod_dimu",
         *OPTION3_MC_STACK_KEYS,

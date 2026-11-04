@@ -92,15 +92,15 @@ def run_dataset_manager_action(params: dict) -> None:
     target_ids = params.get("target_ids") or []
     mode = params.get("dataset_manager_mode", "fetch")
     if not module_tag or not target_ids:
-        print("[TAV ENGINE] Dataset Manager: no module or targets selected.")
+        print("[Superblock Residual Engine] Dataset Manager: no module or targets selected.")
         return
 
     if mode == "fetch":
-        print(f"\n[TAV ENGINE] Fetching {len(target_ids)} dataset(s) for {module_tag}...")
+        print(f"\n[Superblock Residual Engine] Fetching {len(target_ids)} dataset(s) for {module_tag}...")
         params.setdefault("force_refresh", "no")
         result = fetch_selected(module_tag, target_ids, params)
         print(
-            f"[TAV ENGINE] Fetch complete — downloaded: {len(result.fetched)}, "
+            f"[Superblock Residual Engine] Fetch complete — downloaded: {len(result.fetched)}, "
             f"skipped: {len(result.skipped)}, failed: {len(result.failed)}"
         )
         if result.fetched:
@@ -112,7 +112,7 @@ def run_dataset_manager_action(params: dict) -> None:
 
     action = params.get("dataset_manager_action") or _query_fallback_action(module_tag)
     if not action:
-        print(f"[TAV ENGINE] No run action for module {module_tag}")
+        print(f"[Superblock Residual Engine] No run action for module {module_tag}")
         return
-    print(f"\n[TAV ENGINE] Running {action} on {len(target_ids)} dataset(s)...")
+    print(f"\n[Superblock Residual Engine] Running {action} on {len(target_ids)} dataset(s)...")
     run_selected(module_tag, action, target_ids, params)

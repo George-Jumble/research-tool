@@ -165,14 +165,14 @@ def main_curses(stdscr):
                 max_y, max_x = stdscr.getmaxyx()
                 if err:
                     lines = [
-                        "TAU-SB Gateway (GUI) failed to start.",
+                        "Superblock Research Tool (GUI) failed to start.",
                         str(err),
                         "",
                         "Press any key to return to the menu.",
                     ]
                 elif already_running:
                     lines = [
-                        "TAU-SB Gateway (GUI) is already running.",
+                        "Superblock Research Tool (GUI) is already running.",
                         f"PID: {pid}",
                         f"Log: {log_path}",
                         "",
@@ -180,7 +180,7 @@ def main_curses(stdscr):
                     ]
                 else:
                     lines = [
-                        "TAU-SB Gateway (GUI) started in background.",
+                        "Superblock Research Tool (GUI) started in background.",
                         f"PID: {pid}",
                         f"Log: {gateway_log_path()}",
                         "",

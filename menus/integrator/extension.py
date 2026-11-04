@@ -236,10 +236,13 @@ def entry_instructions(action: str) -> list[str]:
 
 
 def run_action(selection: str, show_plots: bool = True, options: dict | None = None) -> None:
+    from superblock_mode import RetiredModuleError, retired_message
+
+    raise RetiredModuleError(retired_message("TAV_DATA_INTEGRATOR", selection))
     options = options or {}
     config_entry = _ACTION_CONFIG.get(selection)
     if config_entry is None:
-        print(f"[TAV ENGINE] Unknown integrator action: {selection}")
+        print(f"[Superblock Residual Engine] Unknown integrator action: {selection}")
         return
 
     if config_entry.get("pull_only"):
@@ -257,11 +260,11 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
             batch_limit=batch_limit,
             force_rescan=str(options.get("force_rescan", "no")).lower() in {"yes", "y", "true", "1"},
         )
-        print(f"[TAV ENGINE] Fetched: {summary.fetched}")
+        print(f"[Superblock Residual Engine] Fetched: {summary.fetched}")
         if summary.failed:
             for key, msg in summary.failed.items():
                 print(f"  FAIL {key}: {msg}")
-        print(f"[TAV ENGINE] Datasets in {DATASETS_DIR}/ | archive -> {FINISHED2_DIR}/")
+        print(f"[Superblock Residual Engine] Datasets in {DATASETS_DIR}/ | archive -> {FINISHED2_DIR}/")
         return
 
     config, planck_keys = _build_config(options)
@@ -270,13 +273,13 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
     if config_entry.get("calibration_only"):
         calibration = integrator.run_final_calibration()
         report_path = integrator.generate_summary_report()
-        print(f"[TAV ENGINE] Void-inflation peaks: {calibration['void_inflation_simulation']['predicted_peaks'][:5]}...")
-        print(f"[TAV ENGINE] Calibration report: {report_path}")
+        print(f"[Superblock Residual Engine] Void-inflation peaks: {calibration['void_inflation_simulation']['predicted_peaks'][:5]}...")
+        print(f"[Superblock Residual Engine] Calibration report: {report_path}")
         return
 
     if config_entry.get("report_only"):
         if not integrator.results.planck and not integrator.results.analytic:
-            print("[TAV ENGINE] No prior pipeline results — run Full Correlation Pipeline first.")
+            print("[Superblock Residual Engine] No prior pipeline results — run Full Correlation Pipeline first.")
             return
         integrator.generate_summary_report()
         return
@@ -291,6 +294,6 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
             _show_saved_plots(Path(config["output"]["artifacts_dir"]))
         else:
             print(
-                "[TAV ENGINE] Graphics saved under artifacts/. "
+                "[Superblock Residual Engine] Graphics saved under artifacts/. "
                 "Set show_graphics=popup to open plot windows."
             )

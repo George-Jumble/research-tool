@@ -21,4 +21,4 @@ def entry_fields() -> list[dict]:
 
 
 def fetch_and_graph(query: str, params: dict | None = None) -> None:
-    print(f"[TAV ENGINE] {MENU_LABEL}: local fetch not fully wired for {query!r}")
+    print(f"[Superblock Residual Engine] {MENU_LABEL}: local fetch not fully wired for {query!r}")

@@ -174,12 +174,12 @@ def capture_run_log(
             handle.write(footer)
             handle.flush()
             test_label = f"{module_tag}_{action}" if module_tag else action
-            print(f"[TAV ENGINE] Test output saved: {log_path}")
-            print(f"[TAV ENGINE] Test: {test_label}")
-            print(f"[TAV ENGINE] Session output file: {output_file}")
+            print(f"[Superblock Residual Engine] Test output saved: {log_path}")
+            print(f"[Superblock Residual Engine] Test: {test_label}")
+            print(f"[Superblock Residual Engine] Session output file: {output_file}")
             opened = open_in_external_editor(output_file)
             if not opened:
                 print(
-                    "[TAV ENGINE] Could not open session output with the configured editor. "
+                    "[Superblock Residual Engine] Could not open session output with the configured editor. "
                     "Use 'Choose Outside Editor' in the root menu to update it."
                 )

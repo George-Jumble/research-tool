@@ -95,9 +95,9 @@ def bootstrap_tav_resonance(*, quiet: bool = True) -> Optional[str]:
     try:
         ver = ensure_tav_resonance_importable()
         if not quiet:
-            print(f"[TAV ENGINE] tav-resonance {ver} ({TAV_RESONANCE_ROOT})")
+            print(f"[Superblock Residual Engine] tav-resonance {ver} ({TAV_RESONANCE_ROOT})")
         return ver
     except ImportError as exc:
         if not quiet:
-            print(f"[TAV ENGINE] tav-resonance not loaded: {exc}")
+            print(f"[Superblock Residual Engine] tav-resonance not loaded: {exc}")
         return None

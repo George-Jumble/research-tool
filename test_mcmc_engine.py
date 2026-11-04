@@ -1,6 +1,9 @@
 import numpy as np
+import pytest
 
-import mcmc_engine as me
+import tav_shared.mcmc_engine as me
+
+_RETIRED_TAV = "retired 2026-09-22: Tav is not a live comparison model"
 
 
 def _synthetic_burkert(x, rho_0=12.0, r_0=2.5):
@@ -28,18 +31,21 @@ def test_model_comparison_ranks_burkert_near_top_on_burkert_data():
 
 
 def test_catalog_contains_requested_profiles():
-    expected = {"NFW", "Einasto", "Burkert", "Hernquist", "pISO", "Tav"}
+    expected = {"NFW", "Einasto", "Burkert", "Hernquist", "pISO", "Mirron"}
     assert expected == set(me.MODEL_CATALOG.keys())
+    assert "Tav" not in me.MODEL_ORDER
 
 
 def test_format_comparison_report_includes_models():
     x = np.linspace(1.0, 10.0, 40)
     y = me.nfw_model(x, 8.0, 3.0)
     report = me.format_comparison_report(me.run_model_comparison(x, y))
-    for label in ("NFW", "Einasto", "Burkert", "Hernquist", "pISO", "Tav-Superblock"):
+    for label in ("NFW", "Einasto", "Burkert", "Hernquist", "pISO"):
         assert label in report
+    assert "Tav-Superblock" not in report
 
 
+@pytest.mark.skip(reason=_RETIRED_TAV)
 def test_softened_tav_returns_sigma_seed_params():
     x = np.linspace(0.5, 20.0, 120)
     y = me.tav_model(x, 4.0, 0.15, 2.5) + np.random.default_rng(3).normal(0, 0.03, size=x.size)
@@ -51,6 +57,7 @@ def test_softened_tav_returns_sigma_seed_params():
     assert "sigma_seed" in me.describe_tav_fit(params)
 
 
+@pytest.mark.skip(reason=_RETIRED_TAV)
 def test_softened_tav_competitive_on_piso_like_core():
     x = np.linspace(0.5, 20.0, 120)
     y = me.piso_model(x, 5.0, 2.0) + np.random.default_rng(4).normal(0, 0.02, size=x.size)

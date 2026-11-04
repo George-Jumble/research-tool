@@ -14,7 +14,7 @@ from tav_shared.llm_analysis import analyze_run_output as query_llm_analysis
 from tav_shared.run_output import parse_show_graphics
 
 MODULE_TAG = "PLANCK_CMB_TAV"
-SUBMENU_TITLE = "Planck CMB Tav-Scan"
+SUBMENU_TITLE = "Planck CMB Residuals"
 
 MENU_ACTIONS = [
     "Compute Power Spectrum",
@@ -119,10 +119,15 @@ def entry_instructions(action: str) -> list[str]:
 
 
 def run_action(selection: str, show_plots: bool = True, options: dict | None = None) -> None:
+    from superblock_mode import CONTINUE, begin_live_action
+
+    routed = begin_live_action(MODULE_TAG, selection, options)
+    if routed is not CONTINUE:
+        return None
     options = options or {}
     config = _ACTION_CONFIG.get(selection)
     if config is None:
-        print(f"[TAV ENGINE] Unknown Planck CMB action: {selection}")
+        print(f"[Superblock Residual Engine] Unknown Planck CMB action: {selection}")
         return
 
     cmb_path = (options.get("cmb_map") or "").strip()
@@ -137,7 +142,7 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
     show_popup = parse_show_graphics(options, default="popup") if show_plots else False
 
     if not cmb_path and not mask_path:
-        print(f"[TAV ENGINE] Auto-detecting .fits files in {FITS_DIR}/")
+        print(f"[Superblock Residual Engine] Auto-detecting .fits files in {FITS_DIR}/")
 
     result = run_pipeline(
         cmb_path=Path(cmb_path) if cmb_path else None,
@@ -153,8 +158,8 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
         _show_saved_plots(artifact_prefix)
     elif config["plot"]:
         print(
-            "[TAV ENGINE] Graphics mode is artifacts — PNGs saved under artifacts/. "
+            "[Superblock Residual Engine] Graphics mode is artifacts — PNGs saved under artifacts/. "
             "Set show_graphics=popup to open plot windows."
         )
-        print(f"[TAV ENGINE] Spectrum: {ARTIFACTS_DIR / f'{artifact_prefix}_spectrum.png'}")
-        print(f"[TAV ENGINE] FFT:      {ARTIFACTS_DIR / f'{artifact_prefix}_fft.png'}")
+        print(f"[Superblock Residual Engine] Spectrum: {ARTIFACTS_DIR / f'{artifact_prefix}_spectrum.png'}")
+        print(f"[Superblock Residual Engine] FFT:      {ARTIFACTS_DIR / f'{artifact_prefix}_fft.png'}")

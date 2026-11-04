@@ -1,6 +1,10 @@
-"""Unit tests ported from tau-cosmology/test_units.py."""
+"""Unit tests ported from tau-cosmology/test_units.py. Berard is not live."""
 
 from __future__ import annotations
+
+import pytest
+
+pytest.skip("retired 2026-09-22: Berard is not a live cosmology backend", allow_module_level=True)
 
 import numpy as np
 

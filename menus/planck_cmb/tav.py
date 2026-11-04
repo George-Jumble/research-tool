@@ -118,7 +118,7 @@ def archive_used_fits(cmb_path: Path | str, mask_path: Path | str) -> list[Path]
         try:
             src.relative_to(FITS_DIR.resolve())
         except ValueError:
-            print(f"[TAV ENGINE] Leaving in place (not under ./fits/): {src}")
+            print(f"[Superblock Residual Engine] Leaving in place (not under ./fits/): {src}")
             continue
 
         dest = move_to_finished_archive(
@@ -127,10 +127,10 @@ def archive_used_fits(cmb_path: Path | str, mask_path: Path | str) -> list[Path]
             also_search=(LEGACY_FINISHED_DIR, LEGACY_FINISHED2_DIR),
         )
         moved.append(dest)
-        print(f"[TAV ENGINE] Archived FITS: {src.name} -> {dest}")
+        print(f"[Superblock Residual Engine] Archived FITS: {src.name} -> {dest}")
 
     if moved:
-        print(f"[TAV ENGINE] {len(moved)} file(s) moved to {FINISHED_DIR}/")
+        print(f"[Superblock Residual Engine] {len(moved)} file(s) moved to {FINISHED_DIR}/")
     return moved
 
 
@@ -201,26 +201,26 @@ def download_planck_mask_for_map(
     dest = dest_dir / mask_name
 
     if dest.is_file() and dest.stat().st_size > 1000:
-        print(f"[TAV ENGINE] Mask already in ./fits/: {mask_name}")
+        print(f"[Superblock Residual Engine] Mask already in ./fits/: {mask_name}")
         return dest
 
     for archive_dir in finished_fits_search_dirs():
         finished_mask = archive_dir / mask_name
         if finished_mask.is_file() and finished_mask.stat().st_size > 1000:
             shutil.copy2(finished_mask, dest)
-            print(f"[TAV ENGINE] Restored mask from {archive_dir}/: {mask_name}")
+            print(f"[Superblock Residual Engine] Restored mask from {archive_dir}/: {mask_name}")
             return dest
         matches = sorted(archive_dir.glob(f"{Path(mask_name).stem}*{Path(mask_name).suffix}"))
         for candidate in matches:
             if candidate.is_file() and candidate.stat().st_size > 1000:
                 shutil.copy2(candidate, dest)
-                print(f"[TAV ENGINE] Restored mask from {archive_dir}/: {candidate.name}")
+                print(f"[Superblock Residual Engine] Restored mask from {archive_dir}/: {candidate.name}")
                 return dest
 
     url = mask_download_url(cmb_path)
-    print(f"[TAV ENGINE] No mask in ./fits/ for {cmb_path.name}")
-    print(f"[TAV ENGINE] Downloading via wget: {mask_name}")
-    print(f"[TAV ENGINE] URL: {url}")
+    print(f"[Superblock Residual Engine] No mask in ./fits/ for {cmb_path.name}")
+    print(f"[Superblock Residual Engine] Downloading via wget: {mask_name}")
+    print(f"[Superblock Residual Engine] URL: {url}")
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     partial = dest.with_suffix(dest.suffix + ".partial")
@@ -244,7 +244,7 @@ def download_planck_mask_for_map(
         )
 
     partial.replace(dest)
-    print(f"[TAV ENGINE] Mask ready: {dest}")
+    print(f"[Superblock Residual Engine] Mask ready: {dest}")
     return dest
 
 
@@ -314,7 +314,7 @@ def resolve_fits_paths(
             resolved_mask = mask_candidates[0]
         elif len(mask_candidates) > 1:
             resolved_mask = mask_candidates[0]
-            print(f"[TAV ENGINE] Multiple masks in ./fits/; using {resolved_mask.name}")
+            print(f"[Superblock Residual Engine] Multiple masks in ./fits/; using {resolved_mask.name}")
 
     if resolved_cmb is None:
         cmb_candidates = [
@@ -325,7 +325,7 @@ def resolve_fits_paths(
             resolved_cmb = cmb_candidates[0]
         elif len(cmb_candidates) > 1:
             resolved_cmb = cmb_candidates[0]
-            print(f"[TAV ENGINE] Multiple CMB maps in ./fits/; using {resolved_cmb.name}")
+            print(f"[Superblock Residual Engine] Multiple CMB maps in ./fits/; using {resolved_cmb.name}")
 
     if resolved_cmb is None or resolved_mask is None:
         if len(fits_files) >= 2:
@@ -369,8 +369,8 @@ def resolve_fits_paths(
             "Provide separate .fits paths in the form."
         )
 
-    print(f"[TAV ENGINE] Using CMB map: {resolved_cmb}")
-    print(f"[TAV ENGINE] Using mask:    {resolved_mask}")
+    print(f"[Superblock Residual Engine] Using CMB map: {resolved_cmb}")
+    print(f"[Superblock Residual Engine] Using mask:    {resolved_mask}")
     return resolved_cmb, resolved_mask
 
 
@@ -482,7 +482,7 @@ def plot_cmb_analysis(
         plt.close(fig2)
 
     for path in saved:
-        print(f"[TAV ENGINE] Plot saved: {path}")
+        print(f"[Superblock Residual Engine] Plot saved: {path}")
     return saved
 
 
@@ -518,7 +518,7 @@ def run_pipeline(
         tav_resonance_detected=detected,
     )
 
-    print("\n[TAV ENGINE] Planck CMB Tav-Resonance Scan")
+    print("\n[Superblock Residual Engine] Planck CMB Tav-Resonance Scan")
     for line in result.summary_lines():
         print(line)
 

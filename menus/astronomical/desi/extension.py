@@ -31,6 +31,7 @@ from menus.astronomical.desi.scanner import (
     N_HIER_BINDING,
     PRODUCTION_PIPELINE_MIN_N,
     TAU_RESONANCE_PERIOD,
+    TAV_RESONANCE_MIN_N,
     list_desi_tracers,
     load_desi_from_cobaya_repo,
     load_extended_bao_data,
@@ -40,7 +41,7 @@ from menus.astronomical.desi.scanner import (
 )
 
 MODULE_TAG = "TAU_SB_DESI"
-SUBMENU_TITLE = "DESI BAO Tau-SB Scan"
+SUBMENU_TITLE = "DESI DR2 BAO Residuals"
 
 MENU_ACTIONS = [
     "Real DESI DR2 Scan (Cobaya)",
@@ -395,7 +396,7 @@ def prepare_run_options(action: str, raw_options: dict | None = None) -> dict[st
     from tav_shared.n_selector_registry import parse_n_points
 
     n_sel = parse_n_points(merged.get("n_points"))
-    if n_sel is not None and n_sel >= 12:
+    if n_sel is not None and n_sel >= TAV_RESONANCE_MIN_N:
         merged.setdefault("include_legacy_bao", "yes")
         merged.setdefault("high_power_stack", "yes")
         merged.setdefault("augment_covariance", "yes")
@@ -866,7 +867,12 @@ def desi_entry_fields(action: str) -> list[dict]:
                 "choices": ["no", "yes"],
             }
         )
-    if action in {"Full Production Pipeline", "Real DESI DR2 Scan (Cobaya)", "Model Compare (ΛCDM vs aDE vs Tau-SB)"}:
+    if action in {
+        "Full Production Pipeline",
+        "Real DESI DR2 Scan (Cobaya)",
+        "Model Compare (ΛCDM vs aDE vs Tau-SB)",
+        "Periodicity Scan (1/7 Tracks)",
+    }:
         fields.extend(
             [
                 {
@@ -1016,11 +1022,11 @@ def _apply_desi_n_selection(
     from tav_research.curses_shell import _safe_addstr
 
     params["n_points"] = str(n)
-    params["force_rescan"] = "yes"
-    # Strengthen batch behavior for real data
-    params["batch_limit"] = str(max(int(n), 20))
-    params["include_legacy_bao"] = "yes" if int(n) >= 12 else "no"
-    if int(n) >= 12:
+    if selection == "Batch Tracer Scan (All DR2)":
+        params["force_rescan"] = "yes"
+        params["batch_limit"] = str(max(int(n), 1))
+    if int(n) >= TAV_RESONANCE_MIN_N:
+        params["include_legacy_bao"] = "yes"
         params["high_power_stack"] = "yes"
         params["augment_covariance"] = "yes"
     if _action_requires_single_channel(selection) and not _is_joint_dh_dm_choice(
@@ -1028,20 +1034,20 @@ def _apply_desi_n_selection(
     ):
         params.setdefault("quantity", DATA_MODE_DEFAULT)
 
-    if int(n) >= 12:
+    if int(n) >= TAV_RESONANCE_MIN_N:
         stdscr.clear()
         _safe_addstr(
             stdscr,
             2,
             2,
-            f"n = {n} → Legacy BOSS/eBOSS data will be included",
+            f"n = {n} → DESI+legacy high-power stack (DH_only or DM_only, n≈9)",
             curses.A_BOLD,
         )
         _safe_addstr(
             stdscr,
             3,
             2,
-            "This is the recommended way to increase real data volume.",
+            "Single-channel stack — does not mix DH+DM. Enough points for tav_resonance.",
             curses.A_DIM,
         )
         stdscr.refresh()
@@ -1106,7 +1112,7 @@ def _collect_desi_scan_settings(
     n_menu = parse_n_points(prepared.get("n_points"))
     n_knobs: dict[str, int] = desi_n_knobs(selection, n_menu) if n_menu is not None else {}
     if n_menu is not None:
-        print(f"[TAV ENGINE] {desi_n_usage_message(selection, n_menu)}")
+        print(f"[Superblock Residual Engine] {desi_n_usage_message(selection, n_menu)}")
 
     mcmc_steps = MCMC_STEPS_DEFAULT
     if config.get("run_mcmc"):
@@ -1196,9 +1202,9 @@ def _run_desi_catalog_grid_action(
         box_size_mpc=_lss_option_float(prepared, "box_size_mpc", 2000.0),
         output_prefix=(prepared.get("output_prefix") or "desi_catalog_grid").strip(),
     )
-    print(f"[TAV ENGINE] {selection} → {report.get('report_path')}")
+    print(f"[Superblock Residual Engine] {selection} → {report.get('report_path')}")
     if report.get("npz_path"):
-        print(f"[TAV ENGINE] δ grid NPZ: {report['npz_path']}")
+        print(f"[Superblock Residual Engine] δ grid NPZ: {report['npz_path']}")
     return str(report.get("report_path") or "")
 
 
@@ -1231,13 +1237,13 @@ def _run_method10_action(
         output_prefix=(prepared.get("output_prefix") or "method10_joint").strip(),
         plot=plot,
     )
-    print(f"[TAV ENGINE] {selection} → {report.get('verdict', report.get('method10', {}).get('verdict'))}")
-    print(f"[TAV ENGINE] Report: {report.get('report_path')}")
+    print(f"[Superblock Residual Engine] {selection} → {report.get('verdict', report.get('method10', {}).get('verdict'))}")
+    print(f"[Superblock Residual Engine] Report: {report.get('report_path')}")
     if plot and report.get("plot_path"):
         if show_popup:
             _show_saved_plot(report["plot_path"])
         else:
-            print(f"[TAV ENGINE] Plot: {report['plot_path']}")
+            print(f"[Superblock Residual Engine] Plot: {report['plot_path']}")
     return str(report.get("report_path") or "")
 
 
@@ -1260,13 +1266,13 @@ def _run_redshift_law_action(
         output_prefix=(prepared.get("output_prefix") or "redshift_law_test2").strip(),
         plot=plot,
     )
-    print(f"[TAV ENGINE] {selection} → {report.get('fit', {}).get('verdict')}")
-    print(f"[TAV ENGINE] Report: {report.get('report_path')}")
+    print(f"[Superblock Residual Engine] {selection} → {report.get('fit', {}).get('verdict')}")
+    print(f"[Superblock Residual Engine] Report: {report.get('report_path')}")
     if plot and report.get("plot_path"):
         if show_popup:
             _show_saved_plot(report["plot_path"])
         else:
-            print(f"[TAV ENGINE] Plot: {report['plot_path']}")
+            print(f"[Superblock Residual Engine] Plot: {report['plot_path']}")
     return str(report.get("report_path") or "")
 
 
@@ -1294,12 +1300,12 @@ def _run_publication_figures_action(
         quantity_filter=quantity_filter,
         output_prefix=(prepared.get("output_prefix") or "lss_manuscript").strip(),
     )
-    print(f"[TAV ENGINE] {selection} → {report.get('report_path')}")
+    print(f"[Superblock Residual Engine] {selection} → {report.get('report_path')}")
     if report.get("suite_path"):
         if show_popup:
             _show_saved_plot(report["suite_path"])
         else:
-            print(f"[TAV ENGINE] Suite: {report['suite_path']}")
+            print(f"[Superblock Residual Engine] Suite: {report['suite_path']}")
     return str(report.get("report_path") or "")
 
 
@@ -1321,13 +1327,13 @@ def _run_cosmology_falsification_action(
         output_prefix=(prepared.get("output_prefix") or "cosmology_suite").strip(),
         plot=plot,
     )
-    print(f"[TAV ENGINE] {selection} → {report.get('verdict', report.get('report_path'))}")
-    print(f"[TAV ENGINE] Report: {report.get('report_path')}")
+    print(f"[Superblock Residual Engine] {selection} → {report.get('verdict', report.get('report_path'))}")
+    print(f"[Superblock Residual Engine] Report: {report.get('report_path')}")
     if plot and report.get("plot_path"):
         if show_popup:
             _show_saved_plot(report["plot_path"])
         else:
-            print(f"[TAV ENGINE] Plot: {report['plot_path']}")
+            print(f"[Superblock Residual Engine] Plot: {report['plot_path']}")
     return str(report.get("report_path") or "")
 
 
@@ -1357,13 +1363,13 @@ def _run_ekk_bao_action(
         plot=plot,
     )
     comp = report.get("comparison", {})
-    print(f"[TAV ENGINE] {selection} → {comp.get('verdict', report.get('report_path'))}")
-    print(f"[TAV ENGINE] Report: {report.get('report_path')}")
+    print(f"[Superblock Residual Engine] {selection} → {comp.get('verdict', report.get('report_path'))}")
+    print(f"[Superblock Residual Engine] Report: {report.get('report_path')}")
     if plot and report.get("plot_path"):
         if show_popup:
             _show_saved_plot(report["plot_path"])
         else:
-            print(f"[TAV ENGINE] Plot: {report['plot_path']}")
+            print(f"[Superblock Residual Engine] Plot: {report['plot_path']}")
     return str(report.get("report_path") or "")
 
 
@@ -1421,21 +1427,28 @@ def _run_lss_falsification_action(
     else:
         return None
 
-    print(f"[TAV ENGINE] {selection} → {report.get('report_path')}")
+    print(f"[Superblock Residual Engine] {selection} → {report.get('report_path')}")
     if plot and report.get("plot_path"):
         if show_popup:
             _show_saved_plot(report["plot_path"])
         else:
-            print(f"[TAV ENGINE] Plot: {report['plot_path']}")
+            print(f"[Superblock Residual Engine] Plot: {report['plot_path']}")
     return str(report.get("report_path") or "")
 
 
 def run_action(selection: str, show_plots: bool = True, options: dict | None = None) -> str | None:
-    """Run a DESI action. Returns JSON report path when a scan completes."""
+    """Run a DESI action. Tau/5D scores are retired; residuals use the Superblock path."""
+    from superblock_mode import CONTINUE, begin_live_action
+
+    routed = begin_live_action(MODULE_TAG, selection, options)
+    if routed is not CONTINUE:
+        if isinstance(routed, dict):
+            return routed.get("report_path")
+        return routed
     prepared = prepare_run_options(selection, options)
     config = _action_config(selection)
     if not config:
-        print(f"[TAV ENGINE] Unknown DESI Tau-SB action: {selection}")
+        print(f"[Superblock Residual Engine] Unknown DESI Tau-SB action: {selection}")
         return None
 
     if config.get("desi_catalog_grid"):
@@ -1506,7 +1519,7 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
         n_menu = parse_n_points(prepared.get("n_points"))
         if max_tracers <= 0 and n_menu is not None:
             max_tracers = n_menu
-            print(f"[TAV ENGINE] {desi_n_usage_message(selection, n_menu)}")
+            print(f"[Superblock Residual Engine] {desi_n_usage_message(selection, n_menu)}")
         cobaya_path = (prepared.get("cobaya_path") or "").strip() or None
         if not cobaya_path and not DEFAULT_COBAYA_ROOT.is_dir():
             raise FileNotFoundError(
@@ -1523,7 +1536,7 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
             max_tracers=max_tracers,
             force_rescan=_yes(prepared.get("force_rescan", "no")),
         )
-        print(f"[TAV ENGINE] Batch summary: {batch['summary_path']}")
+        print(f"[Superblock Residual Engine] Batch summary: {batch['summary_path']}")
         for tracer, info in batch["summaries"].items():
             print(f"  {tracer}: {info}")
         return str(batch.get("summary_path") or "")
@@ -1547,7 +1560,11 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
         batch_limit = int(prepared.get("batch_limit") or 0)
     except ValueError:
         batch_limit = 0
-    if batch_limit > 0 and _yes(prepared.get("force_rescan", "no")):
+    if (
+        config.get("batch_tracers")
+        and batch_limit > 0
+        and _yes(prepared.get("force_rescan", "no"))
+    ):
         from menus.astronomical.desi.production import run_batch_tracer_scan
 
         prefetch_q = (
@@ -1556,7 +1573,7 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
             else quantity_filter
         )
         print(
-            f"[TAV ENGINE] Batch tracer prefetch: up to {batch_limit} tracers "
+            f"[Superblock Residual Engine] Batch tracer prefetch: up to {batch_limit} tracers "
             f"(force_rescan=yes) before {selection}"
         )
         run_batch_tracer_scan(
@@ -1609,17 +1626,17 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
                 use_jax_geometric=settings["use_jax_geometric"],
             )
         except (FileNotFoundError, ValueError, NotImplementedError) as exc:
-            print(f"[TAV ENGINE] DESI Joint_DH_DM split failed: {exc}")
+            print(f"[Superblock Residual Engine] DESI Joint_DH_DM split failed: {exc}")
             try:
                 available = list_desi_tracers(cobaya_path)
-                print(f"[TAV ENGINE] Available tracers: {', '.join(available)}")
+                print(f"[Superblock Residual Engine] Available tracers: {', '.join(available)}")
             except Exception:
                 pass
             raise
         except Exception as exc:
             label = type(exc).__name__
             detail = str(exc).strip()
-            print(f"[TAV ENGINE] DESI Joint_DH_DM run failed: {label}" + (f": {detail}" if detail else ""))
+            print(f"[Superblock Residual Engine] DESI Joint_DH_DM run failed: {label}" + (f": {detail}" if detail else ""))
             return None
 
         print("\n".join(format_joint_dh_dm_summary_lines(batch)))
@@ -1631,7 +1648,7 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
             for mode in ("DH_only", "DM_only"):
                 ch = (batch.get("channels") or {}).get(mode) or {}
                 if ch.get("plot_path"):
-                    print(f"[TAV ENGINE] {mode} plot: {ch['plot_path']}")
+                    print(f"[Superblock Residual Engine] {mode} plot: {ch['plot_path']}")
         return batch.get("summary_path")
 
     try:
@@ -1669,22 +1686,22 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
             use_jax_geometric=settings["use_jax_geometric"],
         )
     except (FileNotFoundError, ValueError, NotImplementedError) as exc:
-        print(f"[TAV ENGINE] DESI load failed: {exc}")
+        print(f"[Superblock Residual Engine] DESI load failed: {exc}")
         try:
             available = list_desi_tracers(cobaya_path)
-            print(f"[TAV ENGINE] Available tracers: {', '.join(available)}")
+            print(f"[Superblock Residual Engine] Available tracers: {', '.join(available)}")
         except Exception:
             pass
         raise
     except Exception as exc:
         label = type(exc).__name__
         detail = str(exc).strip()
-        print(f"[TAV ENGINE] DESI run failed: {label}" + (f": {detail}" if detail else ""))
+        print(f"[Superblock Residual Engine] DESI run failed: {label}" + (f": {detail}" if detail else ""))
         return None
 
     print("\n".join(result.summary_lines()))
     if settings["plot"] and show_popup:
         _show_saved_plot(result.plot_path)
     elif settings["plot"] and result.plot_path:
-        print(f"[TAV ENGINE] Summary plot: {result.plot_path}")
+        print(f"[Superblock Residual Engine] Summary plot: {result.plot_path}")
     return result.report_path

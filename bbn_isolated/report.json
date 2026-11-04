@@ -1,0 +1,25 @@
+{
+  "status": "FAIL_INTEGRATOR",
+  "failed_gate": "G1",
+  "reason": "network not finished; deuterium yield not claimed",
+  "gates": {
+    "G1": false,
+    "G2": false,
+    "G3": false,
+    "G4": false,
+    "G5": false
+  },
+  "Y_n": null,
+  "Y_p": null,
+  "Y_D": null,
+  "Y_T": null,
+  "Y_He3": null,
+  "Y_He4": null,
+  "D_over_H": null,
+  "Yp_mass": null,
+  "eta": 6.12e-10,
+  "tau_n_used": 879.4,
+  "network_name": "skeleton; Wagoner-class rates not integrated",
+  "conservation_max_rel": null,
+  "observational_table": null
+}

@@ -787,8 +787,8 @@ def resolve_dataset_paths(
             "Run 'Pull Datasets from Open Archives' or place CSV files in datasets/frb/."
         )
 
-    print(f"[TAV ENGINE] Using FRB catalog: {resolved_frb}")
-    print(f"[TAV ENGINE] Using void catalog: {resolved_void}")
+    print(f"[Superblock Residual Engine] Using FRB catalog: {resolved_frb}")
+    print(f"[Superblock Residual Engine] Using void catalog: {resolved_void}")
     return resolved_frb, resolved_void
 
 
@@ -807,7 +807,7 @@ def archive_used_datasets(paths: Iterable[Path | str]) -> list[Path]:
         try:
             src.relative_to(DATASETS_DIR.resolve())
         except ValueError:
-            print(f"[TAV ENGINE] Leaving in place (not under datasets/frb/): {src}")
+            print(f"[Superblock Residual Engine] Leaving in place (not under datasets/frb/): {src}")
             continue
 
         dest = move_to_finished_archive(
@@ -817,10 +817,10 @@ def archive_used_datasets(paths: Iterable[Path | str]) -> list[Path]:
         )
         moved.append(dest)
         append_done_entry(dest.name)
-        print(f"[TAV ENGINE] Archived dataset: {src.name} -> {dest}")
+        print(f"[Superblock Residual Engine] Archived dataset: {src.name} -> {dest}")
 
     if moved:
-        print(f"[TAV ENGINE] {len(moved)} file(s) moved to {FINISHED_A_DIR}/")
+        print(f"[Superblock Residual Engine] {len(moved)} file(s) moved to {FINISHED_A_DIR}/")
     return moved
 
 

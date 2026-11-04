@@ -43,7 +43,7 @@ def iter_resumable_batch_lines(batch_file: str, params: dict) -> list[str]:
     print(format_batch_banner("Batch list", status))
     if not selected and status["done_count"] >= status["catalog_total"] and queries:
         print(
-            "[TAV ENGINE] All batch-list entries already processed. "
+            "[Superblock Residual Engine] All batch-list entries already processed. "
             "Use force_rescan=yes to restart from the first ID."
         )
     return selected

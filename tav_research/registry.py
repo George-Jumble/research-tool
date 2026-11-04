@@ -12,7 +12,6 @@ from typing import Any
 import menus.empirical_tests.extension as empirical_tests_extension
 import menus.particle.lhcb.extension as lhcb_echo_extension
 import menus.prime_past.extension as prime_past_extension
-import menus.prime_past.bbn_menu_extension as tav_bbn_extension
 import menus.remote_ai.extension as remote_ai_extension
 import menus.astronomical.sparc.extension as sparc_extension
 
@@ -42,13 +41,9 @@ except ImportError as _frb_import_error:
 else:
     FRB_IMPORT_ERROR = None
 
-try:
-    import menus.integrator.extension as integrator_extension
-except ImportError as _integrator_import_error:
-    integrator_extension = None
-    INTEGRATOR_IMPORT_ERROR = _integrator_import_error
-else:
-    INTEGRATOR_IMPORT_ERROR = None
+# Retired 2026-09-21: Tav Framework Integrator is not on the Superblock-only path.
+integrator_extension = None
+INTEGRATOR_IMPORT_ERROR = None
 
 try:
     import menus.astronomical.desi.extension as tau_sb_desi_extension
@@ -58,21 +53,11 @@ except ImportError as _desi_import_error:
 else:
     DESI_IMPORT_ERROR = None
 
-try:
-    import menus.astronomical.tav_resonance.extension as tav_resonance_extension
-except ImportError as _tav_resonance_import_error:
-    tav_resonance_extension = None
-    TAV_RESONANCE_IMPORT_ERROR = _tav_resonance_import_error
-else:
-    TAV_RESONANCE_IMPORT_ERROR = None
-
-try:
-    import menus.astronomical.berard.extension as berard_framework_extension
-except ImportError as _berard_import_error:
-    berard_framework_extension = None
-    BERARD_IMPORT_ERROR = _berard_import_error
-else:
-    BERARD_IMPORT_ERROR = None
+# Retired 2026-09-21: not imported. Files remain on disk.
+tav_resonance_extension = None
+TAV_RESONANCE_IMPORT_ERROR = None
+berard_framework_extension = None
+BERARD_IMPORT_ERROR = None
 
 try:
     import menus.particle.casimir.extension as tsb_casimir_extension
@@ -82,21 +67,10 @@ except ImportError as _casimir_import_error:
 else:
     CASIMIR_IMPORT_ERROR = None
 
-try:
-    import menus.particle.rgc.extension as rgc_mock_extension
-except ImportError as _rgc_import_error:
-    rgc_mock_extension = None
-    RGC_IMPORT_ERROR = _rgc_import_error
-else:
-    RGC_IMPORT_ERROR = None
-
-try:
-    import menus.tsb_research.extension as tsb_research_extension
-except ImportError as _tsb_research_import_error:
-    tsb_research_extension = None
-    TSB_RESEARCH_IMPORT_ERROR = _tsb_research_import_error
-else:
-    TSB_RESEARCH_IMPORT_ERROR = None
+rgc_mock_extension = None
+RGC_IMPORT_ERROR = None
+tsb_research_extension = None
+TSB_RESEARCH_IMPORT_ERROR = None
 
 try:
     import menus.gravitic.ligo.extension as ligo_gwosc_extension
@@ -131,7 +105,6 @@ MODULE_EXTENSIONS: dict[str, Any] = {
     empirical_tests_extension.MODULE_TAG: empirical_tests_extension,
     sparc_extension.MODULE_TAG: sparc_extension,
     lhcb_echo_extension.MODULE_TAG: lhcb_echo_extension,
-    tav_bbn_extension.MODULE_TAG: tav_bbn_extension,
     remote_ai_extension.MODULE_TAG: remote_ai_extension,
 }
 

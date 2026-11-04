@@ -4,9 +4,9 @@ import scipy.optimize as opt
 TAV_AIC_BREAKTHROUGH = -29634.0
 
 MODEL_CATALOG = {
-    "Tav": {
-        "label": "Tav-Superblock",
-        "profile": "Softened Kerr-seed soliton",
+    "Mirron": {
+        "label": "Superblock Mirron",
+        "profile": "Softened Kerr-seed Mirron",
         "central": "Phase-diffused core (sigma_seed)",
         "outer": "Conformal time-averaging envelope",
         "primary_use": "TS cross-domain correlation with ergosphere damping",
@@ -48,7 +48,9 @@ MODEL_CATALOG = {
     },
 }
 
-MODEL_ORDER = ["Tav", "NFW", "Einasto", "Burkert", "Hernquist", "pISO"]
+# Default comparison is Newtonian / ΛCDM halo profiles only.
+# The retired Tav profile is not in this order.
+MODEL_ORDER = ["NFW", "Einasto", "Burkert", "Hernquist", "pISO"]
 
 
 def _safe_x(x):
@@ -62,7 +64,18 @@ def _aic(n_params, n_points, rss):
 
 def tav_model(x, amplitude, ratio, sigma_seed):
     """
-    Softened Kerr-Seed Tav-Superblock profile.
+    Retired alias. Default fits use Newtonian halo profiles, not this function.
+
+    amplitude: flux scale
+    ratio: domain coupling coefficient
+    sigma_seed: ergosphere interface damping (phase-diffusion width)
+    """
+    return mirron_model(x, amplitude, ratio, sigma_seed)
+
+
+def mirron_model(x, amplitude, ratio, sigma_seed):
+    """
+    Softened Kerr-seed Mirron profile (not a compact extra dimension).
 
     amplitude: flux scale
     ratio: domain coupling coefficient
@@ -74,12 +87,12 @@ def tav_model(x, amplitude, ratio, sigma_seed):
 
     # pISO-like flattened core removes hard central stiffness.
     core = 1.0 / (1.0 + xr ** 2)
-    # Phase-diffused Kerr seed becomes a localized soliton, not a singularity.
-    seed_soliton = np.exp(-0.5 * xr ** 2)
+    # Phase-diffused Kerr seed becomes a localized Mirron, not a singularity.
+    seed_mirron = np.exp(-0.5 * xr ** 2)
     # Conformal refresh envelope carries TS outer-domain structure.
     refresh = 1.0 - np.exp(-xr / 2.0)
 
-    return amplitude * (core + ratio * seed_soliton * core + (1.0 + ratio) * refresh * core)
+    return amplitude * (core + ratio * seed_mirron * core + (1.0 + ratio) * refresh * core)
 
 
 def nfw_model(x, rho_s, r_s):
@@ -142,7 +155,7 @@ def _fit_bounds(model_type):
     return None
 
 
-def run_mcmc_sweep(x, y_obs, model_type="Tav", return_params=False):
+def run_mcmc_sweep(x, y_obs, model_type="NFW", return_params=False):
     """
     Fit one model to empirical arrays and return RSS + AIC.
     """

@@ -164,8 +164,8 @@ def _iter_local_batch(
     if selected:
         files = [path for path in files if path.stem in selected]
     if not files:
-        print(f"[TAV ENGINE] No CSV files found at {LOCAL_DATA_GLOB}")
-        print("[TAV ENGINE] Run 'Pull Batch from Repository' or Dataset Manager fetch first.")
+        print(f"[Superblock Residual Engine] No CSV files found at {LOCAL_DATA_GLOB}")
+        print("[Superblock Residual Engine] Run 'Pull Batch from Repository' or Dataset Manager fetch first.")
         return
 
     batch_files, status = select_batch_items(
@@ -179,11 +179,11 @@ def _iter_local_batch(
     if not batch_files:
         if status["done_count"] >= status["catalog_total"]:
             print(
-                "[TAV ENGINE] All local SPARC CSVs already analyzed. "
+                "[Superblock Residual Engine] All local SPARC CSVs already analyzed. "
                 "Use force_rescan=yes to re-run from the start."
             )
         return
-    print(f"[TAV ENGINE] Batch source: {LOCAL_DATA_GLOB}")
+    print(f"[Superblock Residual Engine] Batch source: {LOCAL_DATA_GLOB}")
     for path in batch_files:
         yield path.stem, path
 
@@ -209,7 +209,7 @@ def _load_theory(options: dict) -> Any:
 
         return TavSuperblockPrimePastHarmonic()
     except Exception as exc:
-        print(f"[TAV ENGINE] Theory object unavailable: {exc}")
+        print(f"[Superblock Residual Engine] Theory object unavailable: {exc}")
         return None
 
 
@@ -234,9 +234,9 @@ def _run_analyzer_for_galaxy(
     analyzer = SPARCAnalyzer(str(csv_path))
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n[TAV ENGINE] SPARC — {selection}")
-    print(f"[TAV ENGINE] Galaxy: {galaxy}")
-    print(f"[TAV ENGINE] Data file: {csv_path}")
+    print(f"\n[Superblock Residual Engine] SPARC — {selection}")
+    print(f"[Superblock Residual Engine] Galaxy: {galaxy}")
+    print(f"[Superblock Residual Engine] Data file: {csv_path}")
 
     if action in {"rotation_curve", "full_analysis", "empirical_mcmc"}:
         from tav_shared.artifact_paths import TestSlug, artifact_path, compose_dataset_slug
@@ -252,7 +252,7 @@ def _run_analyzer_for_galaxy(
                 "png",
             )
         analyzer.plot_rotation_curve(galaxy, show=show_plots, save_path=str(plot_path))
-        print(f"[TAV ENGINE] Rotation curve saved: {plot_path}")
+        print(f"[Superblock Residual Engine] Rotation curve saved: {plot_path}")
         if show_plots:
             _display_plot(True)
         else:
@@ -286,7 +286,7 @@ def _run_empirical_mcmc_for_galaxy(
     df["Observable_Y"] = gal["Vobs"]
 
     ratio = analyzer.calculate_mass_ratio(galaxy)
-    print(f"[TAV ENGINE] SPARC shadow/baryon ratio: {ratio:.4f} (theory target {THEORY_RATIO_TARGET})")
+    print(f"[Superblock Residual Engine] SPARC shadow/baryon ratio: {ratio:.4f} (theory target {THEORY_RATIO_TARGET})")
 
     _run_analyzer_for_galaxy(
         "Empirical Plot + MCMC Sweep",
@@ -306,7 +306,7 @@ def _run_empirical_mcmc_for_galaxy(
     else:
         print("[SIGNAL STABLE] No TS dynamic deviations detected.")
 
-    print("\n[TAV ENGINE] Initiating MCMC statistical sweep...")
+    print("\n[Superblock Residual Engine] Initiating MCMC statistical sweep...")
     comparison = mcmc_engine.run_model_comparison(x, y_total)
     print(mcmc_engine.format_comparison_report(comparison))
 
@@ -358,7 +358,7 @@ def _run_superblock_for_galaxy(
         sparc.plot_rotation_curve(
             galaxy, theory_curve=theory_curve, show=show_plots, save_path=str(plot_path)
         )
-        print(f"[TAV ENGINE] Plot saved: {plot_path}")
+        print(f"[Superblock Residual Engine] Plot saved: {plot_path}")
         if show_plots:
             _display_plot(True)
         else:
@@ -389,7 +389,7 @@ def _run_superblock_for_galaxy(
             sparc.plot_rotation_curve(
                 galaxy, theory_curve=theory_curve, show=show_plots, save_path=str(plot_path)
             )
-            print(f"[TAV ENGINE] Fit plot saved: {plot_path}")
+            print(f"[Superblock Residual Engine] Fit plot saved: {plot_path}")
             if show_plots:
                 _display_plot(True)
             else:
@@ -418,7 +418,7 @@ def _run_superblock_for_galaxy(
         sparc.plot_rotation_curve(
             galaxy, theory_curve=theory_curve, show=show_plots, save_path=str(plot_path)
         )
-        print(f"[TAV ENGINE] Full demo plot saved: {plot_path}")
+        print(f"[Superblock Residual Engine] Full demo plot saved: {plot_path}")
         if show_plots:
             _display_plot(True)
         else:
@@ -431,17 +431,17 @@ def _run_batch(action: str, selection: str, options: dict, show_plots: bool = Tr
     selected = _parse_selected_datasets(options)
     force_rescan = _yes(options.get("force_rescan", ""))
     print(
-        f"[TAV ENGINE] Graphics: {'Tk popup' if show_plots else 'artifacts only (no popup)'}"
+        f"[Superblock Residual Engine] Graphics: {'Tk popup' if show_plots else 'artifacts only (no popup)'}"
     )
     if limit > 0:
-        print(f"[TAV ENGINE] Batch limit: {limit}")
+        print(f"[Superblock Residual Engine] Batch limit: {limit}")
     if selected:
-        print(f"[TAV ENGINE] Selected datasets: {', '.join(sorted(selected))}")
+        print(f"[Superblock Residual Engine] Selected datasets: {', '.join(sorted(selected))}")
 
     run_stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     run_output_dir = ARTIFACTS_DIR / f"sparc_run_{run_stamp}"
     run_output_dir.mkdir(parents=True, exist_ok=True)
-    print(f"[TAV ENGINE] SPARC image output folder: {run_output_dir}")
+    print(f"[Superblock Residual Engine] SPARC image output folder: {run_output_dir}")
 
     processed_paths: list[Path] = []
     completed_ids: list[str] = []
@@ -452,7 +452,7 @@ def _run_batch(action: str, selection: str, options: dict, show_plots: bool = Tr
     ):
         processed += 1
         print(f"\n{'=' * 60}")
-        print(f"[TAV ENGINE] Batch item {processed}: {galaxy}")
+        print(f"[Superblock Residual Engine] Batch item {processed}: {galaxy}")
         print(f"{'=' * 60}")
 
         if action == "empirical_mcmc":
@@ -467,7 +467,7 @@ def _run_batch(action: str, selection: str, options: dict, show_plots: bool = Tr
                 show_plots,
             )
         elif action in {"predict", "fit", "full_demo"}:
-            print(f"\n[TAV ENGINE] SPARC Superblock — {selection}")
+            print(f"\n[Superblock Residual Engine] SPARC Superblock — {selection}")
             _run_superblock_for_galaxy(action, galaxy, options, run_output_dir, show_plots)
         else:
             break
@@ -484,10 +484,10 @@ def _run_batch(action: str, selection: str, options: dict, show_plots: bool = Tr
 
     if completed_ids:
         append_done_entries(SPARC_BATCH_DONE, completed_ids)
-        print(f"[TAV ENGINE] Recorded {len(completed_ids)} galaxy(ies) in {SPARC_BATCH_DONE}")
+        print(f"[Superblock Residual Engine] Recorded {len(completed_ids)} galaxy(ies) in {SPARC_BATCH_DONE}")
 
     if processed:
-        print(f"\n[TAV ENGINE] Batch complete: {processed} galaxies from {LOCAL_DATA_GLOB}")
+        print(f"\n[Superblock Residual Engine] Batch complete: {processed} galaxies from {LOCAL_DATA_GLOB}")
         if mass_ratio_map:
             print("[DIAGNOSTIC] Running Tav-Superblock domain shear sweep...")
             shear_map = run_diagnostic_sweep(mass_ratio_map)
@@ -517,7 +517,7 @@ def _run_test_suite(options: dict) -> None:
     sparc = SPARCData(data_dir=DEFAULT_DATA_DIR)
     galaxies = list_local_galaxies(DEFAULT_DATA_DIR)
     if not galaxies:
-        print(f"[TAV ENGINE] No CSV files at {LOCAL_DATA_GLOB}. Run a repository pull first.")
+        print(f"[Superblock Residual Engine] No CSV files at {LOCAL_DATA_GLOB}. Run a repository pull first.")
         return
 
     limit = parse_batch_limit(options, default=0)
@@ -531,7 +531,7 @@ def _run_test_suite(options: dict) -> None:
     )
     print(format_batch_banner("SPARC test suite", status))
     if not galaxies:
-        print("[TAV ENGINE] No pending galaxies for the test suite.")
+        print("[Superblock Residual Engine] No pending galaxies for the test suite.")
         return
     max_galaxies = _parse_int(options.get("max_galaxies", ""), len(galaxies))
     max_galaxies = min(max_galaxies, len(galaxies))
@@ -542,7 +542,7 @@ def _run_test_suite(options: dict) -> None:
     )
     append_done_entries(SPARC_BATCH_DONE, run_galaxies)
     if results.empty:
-        print("[TAV ENGINE] No galaxies met minimum data requirements.")
+        print("[Superblock Residual Engine] No galaxies met minimum data requirements.")
         return
 
     out_path = ARTIFACTS_DIR / "sparc_superblock_test_suite.csv"
@@ -553,7 +553,7 @@ def _run_test_suite(options: dict) -> None:
         c for c in ["galaxy", "success", "beta2", "reduced_chi2", "median_g_ratio"] if c in results.columns
     ]
     print(results[display_cols].to_string(index=False))
-    print(f"[TAV ENGINE] Suite report saved: {out_path}")
+    print(f"[Superblock Residual Engine] Suite report saved: {out_path}")
 
 
 def _diagnostic_artifact_path(stem: str) -> Path:
@@ -847,7 +847,7 @@ def _run_domain_shear_diagnostic(options: dict) -> None:
     )
     print(f"[DIAGNOSTIC] Shear map saved: {shear_path}")
     if completed_ids:
-        print(f"[TAV ENGINE] Recorded {len(completed_ids)} galaxy(ies) in {SPARC_BATCH_DONE}")
+        print(f"[Superblock Residual Engine] Recorded {len(completed_ids)} galaxy(ies) in {SPARC_BATCH_DONE}")
 
 
 def _run_harmonic_damping_calibration(options: dict) -> None:
@@ -886,7 +886,7 @@ def _run_harmonic_damping_calibration(options: dict) -> None:
     for galaxy in sorted(calibrated)[:5]:
         print(f"  {galaxy}: {calibrated[galaxy]:.6f}")
     if completed_ids:
-        print(f"[TAV ENGINE] Recorded {len(completed_ids)} galaxy(ies) in {SPARC_BATCH_DONE}")
+        print(f"[Superblock Residual Engine] Recorded {len(completed_ids)} galaxy(ies) in {SPARC_BATCH_DONE}")
 
 
 def _run_holdout_matrix_test(options: dict) -> None:
@@ -926,7 +926,7 @@ def _run_holdout_matrix_test(options: dict) -> None:
         f"mean_drift={float(drift.mean()):.4f} | p95_drift={float(np.percentile(drift, 95)):.4f}"
     )
     if completed_ids:
-        print(f"[TAV ENGINE] Recorded {len(completed_ids)} galaxy(ies) in {SPARC_BATCH_DONE}")
+        print(f"[Superblock Residual Engine] Recorded {len(completed_ids)} galaxy(ies) in {SPARC_BATCH_DONE}")
 
 
 # =============================================================================
@@ -1222,10 +1222,15 @@ def entry_instructions(action: str) -> list[str]:
 
 
 def run_action(selection: str, show_plots: bool = True, options: dict | None = None) -> None:
+    from superblock_mode import CONTINUE, begin_live_action
+
+    routed = begin_live_action(MODULE_TAG, selection, options)
+    if routed is not CONTINUE:
+        return None
     options = options or {}
     action = _ACTION_KEYS.get(selection)
     if action is None:
-        print(f"[TAV ENGINE] Unknown SPARC action: {selection}")
+        print(f"[Superblock Residual Engine] Unknown SPARC action: {selection}")
         return
     _execute_action(selection, action, options, show_plots)
 
@@ -1242,12 +1247,12 @@ def _execute_action(selection: str, action: str, options: dict, show_plots: bool
         )
         skipped = len(summary.skipped_done) + len(summary.skipped_existing)
         print(
-            f"[TAV ENGINE] Batch pull complete: {summary.downloaded_count} downloaded, "
+            f"[Superblock Residual Engine] Batch pull complete: {summary.downloaded_count} downloaded, "
             f"{skipped} skipped, {len(summary.failed)} failed."
         )
         if summary.downloaded_count == 0 and skipped == 0 and not summary.failed:
             print(
-                "[TAV ENGINE] Local cache is complete — run analysis actions "
+                "[Superblock Residual Engine] Local cache is complete — run analysis actions "
                 "(e.g. Full SPARC Analysis) on datasets/sparc/*.csv."
             )
         return
@@ -1263,7 +1268,7 @@ def _execute_action(selection: str, action: str, options: dict, show_plots: bool
             done_file=DEFAULT_DONE_FILE,
             force_refresh_catalog=_yes(options.get("refresh_catalog", "")),
         )
-        print(f"[TAV ENGINE] Single pull complete: {path}")
+        print(f"[Superblock Residual Engine] Single pull complete: {path}")
         return
 
     if action == "suite":

@@ -80,7 +80,7 @@ fig = go.Figure(data=traces)
 
 fig.update_layout(
     title=dict(
-        text="E8 Ring Projection — Tav-Superblock Cosmology<br>"
+        text="E8 Ring Projection — Superblock domains<br>"
              "Interactive Galaxy Distribution by Domain / Stagger-Phase",
         font=dict(size=18)
     ),
@@ -104,7 +104,7 @@ fig.update_layout(
 # Add explanatory annotation
 fig.add_annotation(
     text=(
-        "This is an <b>interactive 3D model</b> of the Tav-Superblock framework.<br>"
+        "This is an <b>interactive 3D model</b> of Superblock domain kinematics.<br>"
         "• Rotate with mouse • Zoom with scroll • Hover points for coordinates<br><br>"
         "These galaxies act as 'negative controls' where shadow-mass emergence is suppressed.<br>"
         "Edit parameters at the top of the script to change the distribution.<br><br>"
@@ -145,7 +145,7 @@ def compute_shadow_mass_fraction(eta_overlap=0.5, phi_stagger=0.0):
     """
     Placeholder model for shadow-mass fraction f_sh.
     
-    In the Tav-Superblock framework, f_sh is a geometric function
+    In the Superblock domain picture, f_sh is a geometric function
     of domain overlap (η_overlap) and E8 stagger phase (φ_stagger).
     
     This is a simple illustrative formula — the real version would

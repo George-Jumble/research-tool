@@ -209,38 +209,33 @@ def run_bbn_comparison(
     *,
     verbose: bool = True,
 ) -> dict[str, Any]:
-    """Standard (A=0) vs Tav-modified side-by-side."""
+    """Baseline network versus the same network with nonzero A. No yield score."""
     fw = params if isinstance(params, FrameworkParams) else FrameworkParams.from_mapping(params)
 
     std = FrameworkParams(A=0.0, delta_phi_cyl=fw.delta_phi_cyl, delta_k_wind=fw.delta_k_wind, xi=fw.xi)
-    std_run = run_bbn(std, label="Standard BBN (A=0)", verbose=verbose)
-    mod_run = run_bbn(fw, label="Tav Framework Modified", verbose=verbose)
+    std_run = run_bbn(std, label="baseline network", verbose=verbose)
+    mod_run = run_bbn(fw, label="modified network", verbose=verbose)
 
-    shift_li = None
-    shift_yp = None
-    if std_run["Li7_H"] > 0:
-        shift_li = (mod_run["Li7_H"] - std_run["Li7_H"]) / std_run["Li7_H"] * 100.0
-    if std_run["Y_p_mass"] > 0:
-        shift_yp = (mod_run["Y_p_mass"] - std_run["Y_p_mass"]) / std_run["Y_p_mass"] * 100.0
+    from menus.empirical_tests.tests import bbn_integrator_failure
 
-    comparison = {
+    reason = bbn_integrator_failure(std_run) or bbn_integrator_failure(mod_run)
+    comparison: dict[str, Any] = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "standard": std_run,
         "modified": mod_run,
-        "delta_percent": {
-            "Li7_H": shift_li,
-            "Y_p_mass": shift_yp,
-        },
     }
+    if reason:
+        comparison["status"] = "FAIL_INTEGRATOR"
+        comparison["ledger"] = "FAIL_INTEGRATOR"
+        comparison["reason"] = reason
+        if verbose:
+            print(f"\n[Superblock Residual Engine] BBN status=FAIL_INTEGRATOR")
+            print(f"[Superblock Residual Engine] {reason}")
+        return comparison
 
-    if verbose:
-        print("\n" + "=" * 55)
-        if shift_li is not None:
-            print(f"^7Li/H shift (Tav vs standard): {shift_li:+.1f}%")
-        if shift_yp is not None:
-            print(f"^4He mass-fraction shift: {shift_yp:+.3f}%")
-        print("Vary framework params in the entry form to explore phase/winding scenarios.")
-
+    comparison["status"] = "UNSCORED"
+    comparison["ledger"] = "FAIL_INTEGRATOR"
+    comparison["reason"] = "public BBN code not wired; no Superblock lever added"
     return comparison
 
 
@@ -266,13 +261,12 @@ def confront_empirical_abundances(
     comparison["empirical_confrontation"] = result
 
     if verbose:
-        print("\n[Empirical confrontation — BBN abundances]")
-        for row in result.get("tensions", []):
-            print(
-                f"  {row['observable']}: model={row['theory']:.4e}  "
-                f"obs={row['exp']:.4e} ± {row['exp_unc']:.1e}  "
-                f"({row['tension_sigma']:.1f}σ)  [{row.get('reference', '')}]"
-            )
+        print(
+            f"\n[Superblock Residual Engine] BBN status={result.get('status')} "
+            f"ledger={result.get('ledger')}"
+        )
+        if result.get("reason"):
+            print(f"[Superblock Residual Engine] {result['reason']}")
     return result
 
 
@@ -284,5 +278,5 @@ def save_bbn_report(comparison: dict[str, Any], *, prefix: str = "bbn_interferen
 
     path = artifact_path(TestSlug.PRIME_PAST, compose_dataset_slug(prefix), "report", "json")
     path.write_text(json.dumps(comparison, indent=2) + "\n", encoding="utf-8")
-    print(f"[TAV ENGINE] BBN report saved: {path}")
+    print(f"[Superblock Residual Engine] BBN report saved: {path}")
     return str(path)

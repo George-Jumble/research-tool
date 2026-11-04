@@ -159,8 +159,11 @@ def run_action(
     show_plots: bool = True,
     options: dict | None = None,
 ) -> str | None:
+    from superblock_mode import RetiredModuleError, retired_message
+
+    raise RetiredModuleError(retired_message("RGC_MOCK_CATALOG", selection))
     if selection not in MENU_ACTIONS:
-        print(f"[TAV ENGINE] Unknown RGC action: {selection}")
+        print(f"[Superblock Residual Engine] Unknown RGC action: {selection}")
         return None
 
     options = options or {}

@@ -68,11 +68,49 @@ def r6_weight6_residue(m: int, period: int = WEIGHT6_PERIOD) -> float:
 
 
 def compute_S_n(n_max: int) -> np.ndarray:
-    """S(n) = Σ_{m=1}^{n} r_6(m) — cumulative Weight-6 residue sum."""
+    """S(n) = Σ_{m=1}^{n} r_6(m) — cumulative Weight-6 residue sum (raw E_tot)."""
     n_max = max(1, int(n_max))
     ms = np.arange(1, n_max + 1, dtype=int)
     r6_vec = np.array([r6_weight6_residue(m) for m in ms], dtype=float)
     return np.cumsum(r6_vec)
+
+
+def compute_S_n_energy_split(n_max: int) -> dict[str, Any]:
+    """
+    Split Weight-6 S(n) into bound (positive discrete wells) vs unbound continuum.
+
+    Raw :func:`compute_S_n` still sums every residue (E_tot). Bound ledger keeps
+    only ΔE_bind > 0 discrete terms; negative/continuum residues are E_u.
+    """
+    from tav_shared.bound_unbound_energy import partition_energy
+
+    n_max = max(1, int(n_max))
+    ms = np.arange(1, n_max + 1, dtype=int)
+    r6_vec = np.array([r6_weight6_residue(m) for m in ms], dtype=float)
+    discrete = (ms % int(WEIGHT6_PERIOD)) == 0
+    split = partition_energy(
+        np.abs(r6_vec),
+        e_free=np.abs(r6_vec) + np.maximum(r6_vec, 0.0),
+        e_th=np.inf,
+        is_discrete_harmonic=discrete,
+        tau_bind_ok=True,
+        from_total_aggregator=True,
+        significance=np.where(r6_vec > 0, 3.0, 0.0),
+        ledger="deficit",
+    )
+    return {
+        "S_n_raw": np.cumsum(r6_vec),
+        "E_bound_clean": split["E_bound_clean"],
+        "E_unbound_clean": split["E_unbound_clean"],
+        "bound_flag_clean": split["bound_flag_clean"],
+        "sum_E_b": float(split["sum_E_b"]),
+        "sum_E_u": float(split["sum_E_u"]),
+        "energy_ledger": "deficit",
+        "note_energy": (
+            "S(n)_raw is an E_tot aggregator. Bound wells are E_bound_clean; "
+            "continuum/negative residues are E_unbound_clean."
+        ),
+    }
 
 
 def map_S_n_to_nodes(

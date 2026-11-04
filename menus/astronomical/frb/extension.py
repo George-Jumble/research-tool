@@ -17,7 +17,7 @@ from tav_shared.llm_analysis import analyze_run_output as query_llm_analysis
 from tav_shared.run_output import parse_show_graphics
 
 MODULE_TAG = "FRB_COSMIC_WEB_TAV"
-SUBMENU_TITLE = "FRB Cosmic-Web Tav-Scan"
+SUBMENU_TITLE = "FRB Dispersion Residuals"
 
 MENU_ACTIONS = [
     "Pull Datasets from Open Archives",
@@ -280,10 +280,15 @@ entry_instructions = frb_entry_instructions
 
 
 def run_action(selection: str, show_plots: bool = True, options: dict | None = None) -> None:
+    from superblock_mode import CONTINUE, begin_live_action
+
+    routed = begin_live_action(MODULE_TAG, selection, options)
+    if routed is not CONTINUE:
+        return None
     options = options or {}
     config = _ACTION_CONFIG.get(selection)
     if config is None:
-        print(f"[TAV ENGINE] Unknown FRB cosmic-web action: {selection}")
+        print(f"[Superblock Residual Engine] Unknown FRB cosmic-web action: {selection}")
         return
 
     if config.get("pull_only"):
@@ -295,9 +300,9 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
         }
         restore = _yes(options.get("restore_archived", "no"))
         summary = pull_open_archives(force_refresh=force, restore_archived=restore)
-        print(f"[TAV ENGINE] FRB source: {summary.frb_source}")
-        print(f"[TAV ENGINE] Void source: {summary.void_source}")
-        print(f"[TAV ENGINE] Datasets in {DATASETS_DIR}/")
+        print(f"[Superblock Residual Engine] FRB source: {summary.frb_source}")
+        print(f"[Superblock Residual Engine] Void source: {summary.void_source}")
+        print(f"[Superblock Residual Engine] Datasets in {DATASETS_DIR}/")
         return
 
     if config.get("dispersion_test"):
@@ -308,7 +313,7 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
             threshold = 25.0
         force_refresh, restore_archived = _fetch_options(options)
         if not frb_path:
-            print(f"[TAV ENGINE] Auto-pulling FRB catalog into {DATASETS_DIR}/")
+            print(f"[Superblock Residual Engine] Auto-pulling FRB catalog into {DATASETS_DIR}/")
             ensure_frb_datasets(
                 force_refresh=force_refresh,
                 restore_archived=restore_archived,
@@ -328,7 +333,7 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
     force_refresh, restore_archived = _fetch_options(options)
 
     if not frb_path and not void_path:
-        print(f"[TAV ENGINE] Auto-detecting / auto-pulling datasets in {DATASETS_DIR}/")
+        print(f"[Superblock Residual Engine] Auto-detecting / auto-pulling datasets in {DATASETS_DIR}/")
         ensure_frb_datasets(
             force_refresh=force_refresh,
             restore_archived=restore_archived,
@@ -351,11 +356,11 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
         _show_saved_plots(artifact_prefix)
     elif config["plot"]:
         print(
-            "[TAV ENGINE] Graphics mode is artifacts — PNGs saved under artifacts/. "
+            "[Superblock Residual Engine] Graphics mode is artifacts — PNGs saved under artifacts/. "
             "Set show_graphics=popup to open plot windows."
         )
-        print(f"[TAV ENGINE] Paths: {ARTIFACTS_DIR / f'{artifact_prefix}_paths.png'}")
+        print(f"[Superblock Residual Engine] Paths: {ARTIFACTS_DIR / f'{artifact_prefix}_paths.png'}")
         print(
-            f"[TAV ENGINE] Periodogram: "
+            f"[Superblock Residual Engine] Periodogram: "
             f"{ARTIFACTS_DIR / f'{artifact_prefix}_periodogram.png'}"
         )

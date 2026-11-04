@@ -196,26 +196,24 @@ def detect_binding_transitions(
     try:
         import ruptures as rpt
     except ImportError:
-        # Fallback: local step test at predicted z only
-        algo_used = "predicted_window_test"
-        for z_pred in predicted_zs:
-            mask = np.abs(z_sorted - z_pred) <= prediction_tolerance
-            if np.any(mask):
-                detected_zs.append(float(z_pred))
+        # Predicted-z list alone is not a detection.
+        algo_used = "ruptures_unavailable"
         result_alignment = _score_transition_alignment(
-            detected_zs, predicted_zs, tolerance=prediction_tolerance
+            [], predicted_zs, tolerance=prediction_tolerance
         )
         if verbose:
-            _print_binding_transition_report(mapping, detected_zs, predicted_zs, result_alignment)
+            _print_binding_transition_report(mapping, [], predicted_zs, result_alignment)
         return {
             "algorithm": algo_used,
             "skipped": False,
             "mapping": mapping,
             "predicted_transition_zs": predicted_zs,
-            "detected_transition_zs": detected_zs,
+            "detected_transition_zs": [],
             "break_indices": [],
+            "n_breaks": 0,
             "alignment": result_alignment,
             "penalty": penalty,
+            "note": "ruptures not installed; predicted-z list is not a detection",
         }
 
     y = resid.reshape(-1, 1)
@@ -274,13 +272,20 @@ def _score_transition_alignment(
                 "aligned": bool(best_dist <= tolerance),
             }
         )
+    n_detected = int(len(detected))
     n_aligned = sum(1 for m in matches if m["aligned"])
+    alignment_fraction: float | None
+    if n_detected == 0:
+        alignment_fraction = None
+    else:
+        alignment_fraction = float(n_aligned / n_detected)
     return {
         "tolerance": float(tolerance),
-        "n_detected": len(detected),
+        "n_detected": n_detected,
         "n_predicted": len(predicted),
         "n_aligned": n_aligned,
-        "alignment_fraction": float(n_aligned / max(1, len(detected))),
+        "alignment_fraction": alignment_fraction,
+        "alignment": alignment_fraction,
         "matches": matches,
     }
 
@@ -304,10 +309,15 @@ def _print_binding_transition_report(
     print("\n[Harmonic Binding — transition detection]")
     print(f"  Detected z:   {[round(z, 3) for z in detected]}")
     print(f"  Predicted z:  {[round(z, 3) for z in predicted[:8]]}")
-    print(
-        f"  Aligned: {alignment.get('n_aligned', 0)}/{alignment.get('n_detected', 0)} "
-        f"(tol={alignment.get('tolerance', 0.15):.2f})"
-    )
+    n_det = int(alignment.get("n_detected", len(detected)))
+    frac = alignment.get("alignment_fraction")
+    if n_det == 0 or frac is None:
+        print("  n_detected=0 alignment=null (predicted-z list is not a detection)")
+    else:
+        print(
+            f"  Aligned: {alignment.get('n_aligned', 0)}/{n_det} "
+            f"(tol={alignment.get('tolerance', 0.15):.2f})"
+        )
 
 
 def search_harmonic_features(
@@ -370,16 +380,31 @@ def search_harmonic_features(
             )
         z_binned = {"n_bins": n_bins, "bins": bin_features}
 
-    # 142857-cycle sub-harmonic probe (scaled to s-span)
+    # 142857-cycle sub-harmonic probe — only if s-span can resolve ≳1 cycle.
     cycle_probe: dict[str, Any] = {}
     if len(s_arr) >= 3:
         s_span = float(np.max(s_arr) - np.min(s_arr))
-        if s_span > 0:
-            f_142857 = fundamental_freq / CYCLE_142857
+        f_142857 = fundamental_freq / CYCLE_142857
+        min_span = 1.0 / max(f_142857, 1e-30)
+        if s_span < min_span:
+            cycle_probe = {
+                "skipped": True,
+                "frequency": float(f_142857),
+                "s_span": s_span,
+                "min_s_span": float(min_span),
+                "reason": (
+                    f"s-span={s_span:.3g} cannot resolve 142857-cycle "
+                    f"(f={f_142857:.2e}; need Δs≳{min_span:.2e})"
+                ),
+            }
+            if verbose:
+                print(f"[142857-cycle probe] skipped: {cycle_probe['reason']}")
+        elif s_span > 0:
             from menus.astronomical.desi.stats import _lomb_scargle_power_at_frequency
 
             power, backend = _lomb_scargle_power_at_frequency(s_arr, resid, f_142857)
             cycle_probe = {
+                "skipped": False,
                 "frequency": f_142857,
                 "observed_power": float(power),
                 "backend": backend,
@@ -456,6 +481,22 @@ def inject_binding_modulation(
     }
 
 
+def ladder_1_7_significant_from_periodicity(
+    *,
+    periodicity_detection: bool | None,
+    p_values_trusted: bool = True,
+) -> bool:
+    """
+    Single 1/7 source of truth: kit flag ≡ periodicity.detection.
+
+    Higher-harmonic p_boot hits (e.g. harmonic 2 at 0.0125) never set this bit.
+    Untrusted p-values (rebuild no-op / cond high, or not PD) force False.
+    """
+    if not p_values_trusted:
+        return False
+    return bool(periodicity_detection)
+
+
 def run_harmonic_binding_kit(
     z: np.ndarray,
     observable: np.ndarray,
@@ -467,11 +508,16 @@ def run_harmonic_binding_kit(
     gamma: float = 10.0,
     desi_tracers: Sequence[str] | None = None,
     verbose: bool = True,
+    periodicity_detection: bool | None = None,
+    p_values_trusted: bool = True,
+    n_bootstrap: int = 2000,
 ) -> dict[str, Any]:
     """
     One-call harmonic binding detection kit for DESI workflow integration.
 
     Runs level mapping, transition detection, and extended harmonic features.
+    ``ladder_1_7_significant`` is identical to the Periodicity Scan detection
+    bit — harmonic 2 (or 7) alone cannot set it.
     """
     if verbose:
         print("\n" + "=" * 60)
@@ -497,21 +543,48 @@ def run_harmonic_binding_kit(
         residuals,
         s,
         z=z,
+        n_bootstrap=n_bootstrap,
         verbose=verbose,
     )
 
+    ladder = harmonics.get("ladder") or {}
+    sig_h = list(ladder.get("significant_harmonics") or [])
+    if not p_values_trusted:
+        for h, entry in (ladder.get("harmonics") or {}).items():
+            if isinstance(entry, dict):
+                entry["p_untrusted"] = True
+        harmonics["p_values_trusted"] = False
+        ladder["p_values_trusted"] = False
+
+    n_detected = int(
+        transitions.get("n_breaks", len(transitions.get("detected_transition_zs") or []))
+    )
+    align = transitions.get("alignment") or {}
+    align_frac = align.get("alignment_fraction")
+    if n_detected == 0:
+        align_frac = None
+
+    ladder_1_7 = ladder_1_7_significant_from_periodicity(
+        periodicity_detection=periodicity_detection,
+        p_values_trusted=p_values_trusted,
+    )
+
     kit = {
-        "kit_version": "2026-06-30",
+        "kit_version": "2026-08-27",
         "binding_level_mapping": mapping,
         "binding_transitions": transitions,
         "harmonic_features": harmonics,
+        "p_values_trusted": bool(p_values_trusted),
+        "periodicity_detection": bool(periodicity_detection) if periodicity_detection is not None else None,
         "summary": {
             "n_binding_levels": mapping["n_levels"],
-            "n_detected_transitions": transitions.get("n_breaks", len(transitions.get("detected_transition_zs", []))),
-            "harmonic_ladder_significant": bool(
-                harmonics.get("ladder", {}).get("any_significant_at_5pct", False)
-            ),
-            "alignment_fraction": float(transitions.get("alignment", {}).get("alignment_fraction", 0.0)),
+            "n_detected_transitions": n_detected,
+            "ladder_1_7_significant": ladder_1_7,
+            "harmonic_ladder_significant": ladder_1_7,
+            "significant_harmonics": sig_h,
+            "alignment_fraction": align_frac,
+            "alignment": align_frac,
+            "p_values_trusted": bool(p_values_trusted),
         },
     }
 
@@ -520,7 +593,19 @@ def run_harmonic_binding_kit(
         sm = kit["summary"]
         print(f"  Binding levels mapped : {sm['n_binding_levels']}")
         print(f"  Transitions detected  : {sm['n_detected_transitions']}")
-        print(f"  Prediction alignment  : {sm['alignment_fraction']:.2f}")
-        print(f"  1/7 ladder significant: {sm['harmonic_ladder_significant']}")
+        if sm["alignment"] is None:
+            print("  Prediction alignment  : null")
+        else:
+            print(f"  Prediction alignment  : {sm['alignment']:.2f}")
+        print(f"  1/7 ladder significant: {sm['ladder_1_7_significant']}")
+        extra = [h for h in sig_h if h != 1]
+        if extra:
+            tag = "untrusted" if not p_values_trusted else "diagnostic only"
+            print(
+                f"  significant_harmonics={sig_h} ({tag}; "
+                "higher harmonics do not set the 1/7 flag)"
+            )
+        if not p_values_trusted:
+            print("  ⚠ p-values untrusted (rebuild no-op / cond high, or not PD)")
 
     return kit

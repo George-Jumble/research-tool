@@ -81,11 +81,11 @@ def ensure_tav_project_dirs() -> None:
     #         result = rt.sftp_mkdir_p(remote_dir)
     #         if not result.ok:
     #             print(
-    #                 f"[TAV ENGINE] Warning: could not create remote {remote_dir}: "
+    #                 f"[Superblock Residual Engine] Warning: could not create remote {remote_dir}: "
     #                 f"{result.stderr or result.stdout}"
     #             )
     # except Exception as e:
-    #     print(f"[TAV ENGINE] Warning: remote mkdir skipped ({e})")
+    #     print(f"[Superblock Residual Engine] Warning: remote mkdir skipped ({e})")
 
 
 def finished_a_search_dirs() -> tuple[Path, ...]:
@@ -157,7 +157,7 @@ def delete_previous_archived_runs(
         if len(removed) > 4:
             names += f", ... (+{len(removed) - 4})"
         print(
-            f"[TAV ENGINE] Removed {len(removed)} prior archive(s) for "
+            f"[Superblock Residual Engine] Removed {len(removed)} prior archive(s) for "
             f"{Path(filename).name}: {names}"
         )
     return removed
@@ -205,14 +205,14 @@ def push_to_remote_public(
     # rt = _remote()
     # sub = _subdir_name(archive_dir)
     # remote_path = rt.remote_tav_subdir(sub, local_file.name)
-    # print(f"[TAV ENGINE] SFTP → {rt.remote_spec()}:{remote_path}")
+    # print(f"[Superblock Residual Engine] SFTP → {rt.remote_spec()}:{remote_path}")
     # result = rt.sftp_put_file(local_file, remote_path)
     # if not result.ok:
     #     raise RuntimeError(
     #         f"SFTP upload failed for {local_file.name}: "
     #         f"{result.stderr or result.stdout or result.command}"
     #     )
-    # print(f"[TAV ENGINE] Uploaded {local_file.name} to remote Public archive")
+    # print(f"[Superblock Residual Engine] Uploaded {local_file.name} to remote Public archive")
     # return remote_path
 
 
@@ -233,8 +233,8 @@ def move_to_finished_archive(
     # try:
     #     push_to_remote_public(dest, archive_dir)
     # except Exception as e:
-    #     print(f"[TAV ENGINE] Warning: remote Public transfer failed: {e}")
-    #     print(f"[TAV ENGINE] File remains in local staging: {dest}")
+    #     print(f"[Superblock Residual Engine] Warning: remote Public transfer failed: {e}")
+    #     print(f"[Superblock Residual Engine] File remains in local staging: {dest}")
     return dest
 
 

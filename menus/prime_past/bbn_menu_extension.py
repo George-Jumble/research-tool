@@ -108,13 +108,16 @@ def run_action(
     show_plots: bool = True,
     options: dict | None = None,
 ) -> str | None:
+    from superblock_mode import RetiredModuleError, retired_message
+
+    raise RetiredModuleError(retired_message("TAV_BBN", selection))
     options = options or {}
     action = _ACTION_KEYS.get(selection)
     if action is None:
-        print(f"[TAV ENGINE] Unknown Tav BBN action: {selection}")
+        print(f"[Superblock Residual Engine] Unknown Tav BBN action: {selection}")
         return None
 
-    print(f"\n[TAV ENGINE] Tav BBN — {selection}")
+    print(f"\n[Superblock Residual Engine] Tav BBN — {selection}")
     tau = float(options.get("neutron_lifetime") or 879.4)
 
     if action == "run_scan":

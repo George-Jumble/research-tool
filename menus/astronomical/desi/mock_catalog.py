@@ -415,7 +415,8 @@ def recover_mock_entry(
         "dof": int(fit.get("dof", 0)),
         "amplitude_scale_fit": float(fit.get("amplitude_scale", float("nan"))),
         "delta_n_label": inj.get("delta_n_label"),
-        "lomb_detected": bool((per.get("tav_harmonics") or {}).get("lomb_detected", False)),
+        "lomb_detected": bool(per.get("lomb_peak_1_7", False)),
+        "detection": bool(per.get("detection", False)),
         "power_at_1_7": float(per.get("power_at_expected", 0.0)),
     }
 

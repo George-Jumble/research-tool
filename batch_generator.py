@@ -7,7 +7,7 @@ def generate_batch_from_index(input_file, output_file="batch_data.txt"):
     Example: Extracts '1803608' from lines or paths.
     """
     if not os.path.exists(input_file):
-        print(f"[TAV ENGINE ERROR] Source index file '{input_file}' not found.")
+        print(f"[Superblock Residual Engine] ERROR Source index file '{input_file}' not found.")
         return
 
     try:
@@ -31,12 +31,12 @@ def generate_batch_from_index(input_file, output_file="batch_data.txt"):
                 f_out.write(f"{ds_id}\n")
                 count += 1
         
-        print(f"[TAV ENGINE] Batch file '{output_file}' generated with {count} targets.")
+        print(f"[Superblock Residual Engine] Batch file '{output_file}' generated with {count} targets.")
     except Exception as e:
-        print(f"[TAV ENGINE ERROR] Failed to process index file: {e}")
+        print(f"[Superblock Residual Engine] ERROR Failed to process index file: {e}")
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         generate_batch_from_index(sys.argv[1])
     else:
-        print("[TAV ENGINE] Usage: ./venv/bin/python3 batch_generator.py <INDEX_FILE>")
+        print("[Superblock Residual Engine] Usage: ./venv/bin/python3 batch_generator.py <INDEX_FILE>")

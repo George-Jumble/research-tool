@@ -33,7 +33,7 @@ from typing import Any, Callable
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy import optimize, signal
+from scipy import optimize
 from scipy.stats import chi2
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -59,6 +59,7 @@ TAU_RESONANCE_PERIOD: float = 7.0  # s-units; expected frequency f = 1/7
 TAU_PERIOD: float = TAU_RESONANCE_PERIOD  # alias used in sound-horizon docs
 GAMMA_REFERENCE: float = 10.0  # nominal τ-cylinder stretch γ₀
 RD_OBSERVED_MPC: float = 147.09  # Planck 2018 / DESI DR2 sound horizon (Mpc)
+C_LIGHT_KM_S: float = 299792.458
 RD_OBSERVED_ERR_MPC: float = 0.26
 KAPPA_LEAK_DEFAULT: float = 0.015  # photon dispersion default (JAX pipeline 2026-07-09)
 H0_FIDUCIAL_KM_S_MPC: float = 68.5  # DESI DR2 + BBN reference H₀
@@ -171,8 +172,9 @@ def _oscillation_param_count(
 def _format_power_assessment_lines(assessment: dict[str, Any] | None) -> list[str]:
     if not assessment:
         return []
+    stamp = str(assessment.get("power_stamp") or assessment.get("overall_severity") or "unknown").upper()
     lines = [
-        f"Statistical power: {assessment.get('overall_severity', 'unknown').upper()}",
+        f"Statistical power: {stamp}",
     ]
     for row in assessment.get("issues", []):
         lines.append(f"  [{row['severity'].upper()}] {row['issue']}: {row['message']}")
@@ -192,10 +194,292 @@ def _try_tav_harmonic_check(
     residuals: np.ndarray,
     *,
     period: float = TAU_RESONANCE_PERIOD,
+    lomb_peak_1_7: bool | None = None,
+    detection: bool | None = None,
 ) -> dict[str, Any]:
     from menus.astronomical.desi.stats import tav_harmonic_check_robust
 
-    return tav_harmonic_check_robust(s, residuals, period=period)
+    return tav_harmonic_check_robust(
+        s,
+        residuals,
+        period=period,
+        lomb_peak_1_7=lomb_peak_1_7,
+        detection=detection,
+    )
+
+
+def count_unique_z(z: np.ndarray, *, tol: float = STANDARD_DEDUPE_Z_TOL) -> int:
+    """Count unique redshifts at |Δz| ≤ ``tol`` (greedy left-to-right)."""
+    z_sorted = np.sort(np.asarray(z, dtype=float).ravel())
+    if z_sorted.size == 0:
+        return 0
+    n_unique = 1
+    last = float(z_sorted[0])
+    for zi in z_sorted[1:]:
+        if float(zi) - last > tol:
+            n_unique += 1
+            last = float(zi)
+    return n_unique
+
+
+def _is_dv_converted_source(source: str, quantity: str = "") -> bool:
+    """True for fiducial-α D_V→D_H rows (6dF / MGS / BGS isotropic BAO)."""
+    blob = f"{source} {quantity}".lower().replace("α", "alpha").replace("α", "alpha")
+    if "dv_to_dh" in blob:
+        return True
+    if "fiducial" in blob and "alpha" in blob:
+        return True
+    if "isotropic" in blob and "dv" in blob:
+        return True
+    return False
+
+
+def dh_only_periodogram_keep_mask(
+    *,
+    n: int,
+    quantities: Sequence[str] | None = None,
+    sources: Sequence[str] | None = None,
+    dv_converted: Sequence[bool] | None = None,
+) -> np.ndarray:
+    """Keep mask: DH_only periodogram must not include D_V-converted rows."""
+    keep = np.ones(int(n), dtype=bool)
+    q = list(quantities or [])
+    src = list(sources or [])
+    flags = list(dv_converted or [])
+    for i in range(int(n)):
+        flagged = bool(flags[i]) if i < len(flags) else False
+        source_i = src[i] if i < len(src) else ""
+        q_i = q[i] if i < len(q) else ""
+        if flagged or _is_dv_converted_source(source_i, q_i):
+            keep[i] = False
+    return keep
+
+
+def filter_dh_only_periodogram_vector(data: dict[str, Any]) -> dict[str, Any]:
+    """Drop D_V-converted (fiducial-α) rows from a DH_only data vector."""
+    z = np.asarray(data["z"], dtype=float).ravel()
+    n = int(z.size)
+    keep = dh_only_periodogram_keep_mask(
+        n=n,
+        quantities=data.get("quantity"),
+        sources=data.get("stack_sources"),
+        dv_converted=data.get("dv_converted_rows"),
+    )
+    if bool(np.all(keep)):
+        out = dict(data)
+        out.setdefault("n_raw", int(data.get("n_raw", n)))
+        out.setdefault("n_deduped", count_unique_z(z))
+        return out
+
+    idx = np.where(keep)[0]
+    out = dict(data)
+    out["z"] = z[idx]
+    out["observable"] = np.asarray(data["observable"], dtype=float).ravel()[idx]
+    err = data.get("err")
+    if err is not None:
+        out["err"] = np.asarray(err, dtype=float).ravel()[idx]
+    if data.get("s") is not None:
+        out["s"] = np.asarray(data["s"], dtype=float).ravel()[idx]
+    quantities = list(data.get("quantity") or [])
+    if quantities:
+        out["quantity"] = [quantities[i] for i in idx]
+        out["quantity_types"] = sorted(set(out["quantity"]))
+    sources = list(data.get("stack_sources") or [])
+    if sources:
+        out["stack_sources"] = [sources[i] for i in idx]
+    flags = list(data.get("dv_converted_rows") or [])
+    if flags:
+        out["dv_converted_rows"] = [flags[i] for i in idx]
+    cov = data.get("cov")
+    if cov is not None:
+        cov_arr = np.asarray(cov, dtype=float)
+        if cov_arr.shape == (n, n):
+            out["cov"] = cov_arr[np.ix_(idx, idx)]
+    native = data.get("cov_native")
+    if native is not None:
+        native_arr = np.asarray(native, dtype=float)
+        if native_arr.shape == (n, n):
+            out["cov_native"] = native_arr[np.ix_(idx, idx)]
+    pre = data.get("cov_pre_unique_z")
+    if pre is not None:
+        pre_arr = np.asarray(pre, dtype=float)
+        if pre_arr.shape == (n, n):
+            out["cov_pre_unique_z"] = pre_arr[np.ix_(idx, idx)]
+    for key in ("row_block_id", "row_in_block"):
+        arr = data.get(key)
+        if arr is not None:
+            out[key] = np.asarray(arr)[idx]
+    out["n_data"] = int(len(idx))
+    out["n_raw"] = int(data.get("n_raw", n))
+    out["n_deduped"] = count_unique_z(out["z"])
+    out["dv_converted_rows_dropped"] = int(n - len(idx))
+    return out
+
+
+def has_twin_z_pairs(z: np.ndarray, *, tol: float = STANDARD_DEDUPE_Z_TOL) -> bool:
+    """True if any consecutive unique-sorted redshifts satisfy |Δz| ≤ tol."""
+    z_sorted = np.sort(np.asarray(z, dtype=float).ravel())
+    if z_sorted.size < 2:
+        return False
+    return bool(np.any(np.diff(z_sorted) <= tol))
+
+
+def apply_analysis_z_dedupe(
+    data: dict[str, Any],
+    *,
+    tol: float = STANDARD_DEDUPE_Z_TOL,
+    prefer_last: bool = True,
+) -> dict[str, Any]:
+    """
+    Unique-z the analysis / fit vector at ``tol`` and rebuild the covariance.
+
+    High-power stacking may retain duplicate redshifts (n_raw); the periodogram
+    and Tau-SB fit must not. ``n_used == n_deduped == n_data`` after this call.
+    """
+    z = np.asarray(data["z"], dtype=float).ravel()
+    n = int(z.size)
+    n_raw = int(data.get("n_raw", n))
+    if n == 0:
+        out = dict(data)
+        out["n_raw"] = n_raw
+        out["n_deduped"] = 0
+        out["n_used"] = 0
+        out["n_data"] = 0
+        out["analysis_dedupe_z_tol"] = float(tol)
+        return out
+
+    order = np.argsort(z)
+    z_sorted = z[order]
+    keep_sorted = np.ones(n, dtype=bool)
+    for i in range(1, n):
+        if abs(z_sorted[i] - z_sorted[i - 1]) <= tol:
+            if prefer_last:
+                keep_sorted[i - 1] = False
+            else:
+                keep_sorted[i] = False
+    idx = order[np.where(keep_sorted)[0]]
+    idx = np.sort(idx)
+
+    out = dict(data)
+    out["z"] = z[idx]
+    out["observable"] = np.asarray(data["observable"], dtype=float).ravel()[idx]
+    if data.get("err") is not None:
+        out["err"] = np.asarray(data["err"], dtype=float).ravel()[idx]
+    if data.get("s") is not None:
+        out["s"] = np.asarray(data["s"], dtype=float).ravel()[idx]
+    quantities = list(data.get("quantity") or [])
+    if quantities:
+        out["quantity"] = [quantities[int(i)] for i in idx]
+        out["quantity_types"] = sorted(set(out["quantity"]))
+    sources = list(data.get("stack_sources") or [])
+    if sources:
+        out["stack_sources"] = [sources[int(i)] for i in idx]
+    flags = list(data.get("dv_converted_rows") or [])
+    if flags:
+        out["dv_converted_rows"] = [flags[int(i)] for i in idx]
+
+    n_used = int(len(idx))
+    fat_prepared = data.get("cov_pre_unique_z")
+    if fat_prepared is None:
+        fat_prepared = data.get("cov")
+    cov_src = data.get("cov_native")
+    if cov_src is None:
+        cov_src = fat_prepared
+    # Never keep a fat pre-dedupe C next to the unique-z vector.
+    out.pop("cov", None)
+    out.pop("cov_chol", None)
+    if cov_src is not None:
+        cov_arr = np.asarray(cov_src, dtype=float)
+        from menus.astronomical.desi.analysis import (
+            assemble_native_cov,
+            check_covariance_health,
+            rebuild_cov_after_unique_z,
+        )
+
+        kappa_pre = None
+        n_pre = int(np.asarray(fat_prepared).shape[0]) if fat_prepared is not None else n
+        pre_health = data.get("cov_health") if isinstance(data.get("cov_health"), dict) else None
+        if pre_health and pre_health.get("condition_number") is not None:
+            kappa_pre = float(pre_health["condition_number"])
+        elif fat_prepared is not None:
+            fat_arr_k = np.asarray(fat_prepared, dtype=float)
+            if fat_arr_k.ndim == 2 and fat_arr_k.shape[0] == fat_arr_k.shape[1]:
+                kappa_pre = float(check_covariance_health(fat_arr_k).get("condition_number") or 0.0)
+
+        assembled = None
+        try:
+            assembled = assemble_native_cov(
+                idx,
+                row_block_id=data.get("row_block_id"),
+                row_in_block=data.get("row_in_block"),
+                block_native_covs=data.get("block_native_covs"),
+                fallback=cov_arr if cov_arr.shape[0] == n else None,
+            )
+        except (ValueError, TypeError):
+            assembled = None
+
+        src_ok = (
+            assembled is not None
+            or (cov_arr.ndim == 2 and cov_arr.shape[0] == cov_arr.shape[1] and cov_arr.shape[0] == n)
+        )
+        if src_ok:
+            cov_out, cov_health = rebuild_cov_after_unique_z(
+                cov_arr if assembled is None else assembled,
+                idx,
+                name=str(data.get("label", "bao")) + "_unique_z",
+                kappa_pre=kappa_pre,
+                n_pre=n_pre,
+                fat_cov=fat_prepared,
+                assembled=assembled,
+            )
+            if cov_out.shape != (n_used, n_used):
+                out["cov"] = None
+                out["p_values_trusted"] = False
+                out["pvalue_untrusted"] = True
+                out["cov_rebuilt_after_dedupe"] = False
+                out["cov_n"] = int(cov_out.shape[0])
+                out["cov_kappa"] = float(cov_health.get("cov_kappa", float("nan")))
+                out["kappa_pre_dedupe"] = kappa_pre
+                cov_health["warnings"] = list(cov_health.get("warnings") or []) + [
+                    f"refusing fat cov {tuple(cov_out.shape)} for n_used={n_used}"
+                ]
+                out["cov_health"] = cov_health
+            else:
+                out["cov"] = cov_out
+                if cov_arr.ndim == 2 and cov_arr.shape[0] == n:
+                    out["cov_native"] = np.asarray(cov_arr, dtype=float)[np.ix_(idx, idx)]
+                elif assembled is not None:
+                    out["cov_native"] = np.array(assembled, dtype=float, copy=True)
+                out["cov_health"] = cov_health
+                out["cov_chol"] = cov_health.pop("_cov_chol", None)
+                out["err"] = np.sqrt(np.clip(np.diag(cov_out), 0.0, None))
+                rebuilt = bool(cov_health.get("cov_rebuilt_after_dedupe", False))
+                out["pvalue_untrusted"] = bool(cov_health.get("pvalue_untrusted") or not rebuilt)
+                out["p_values_trusted"] = not out["pvalue_untrusted"]
+                out["cov_n"] = int(cov_out.shape[0])
+                out["cov_kappa"] = float(
+                    cov_health.get("cov_kappa", cov_health.get("condition_number") or 0.0)
+                )
+                out["cov_rebuilt_after_dedupe"] = rebuilt
+                out["kappa_pre_dedupe"] = kappa_pre
+        else:
+            out["cov"] = None
+            out["p_values_trusted"] = False
+            out["pvalue_untrusted"] = True
+            out["cov_rebuilt_after_dedupe"] = False
+            out["cov_n"] = int(cov_arr.shape[0]) if cov_arr.ndim == 2 else 0
+            out["cov_kappa"] = float(kappa_pre) if kappa_pre is not None else float("nan")
+            out["kappa_pre_dedupe"] = kappa_pre
+
+    out["n_raw"] = n_raw
+    out["n_deduped"] = n_used
+    out["n_used"] = n_used
+    out["n_data"] = n_used
+    out["analysis_dedupe_z_tol"] = float(tol)
+    out["dedupe_z_tol"] = float(tol)
+    gamma = float(data.get("gamma_used") or data.get("gamma") or GAMMA_REFERENCE)
+    out["s"] = s_from_z(out["z"], gamma=gamma)
+    return out
 
 
 # ============================================================
@@ -215,6 +499,9 @@ JOINT_DH_DM: str = "joint_DH_DM"
 # ============================================================
 DATA_MODE_DH_ONLY: str = "DH_only"
 DATA_MODE_DM_ONLY: str = "DM_only"
+DATA_MODE_DV_ONLY: str = "DV_only"
+DATA_MODE_ANISOTROPIC: str = "anisotropic"
+DATA_MODE_MIXED: str = "mixed"
 DATA_MODE_JOINT: str = "Joint_DH_DM"
 DATA_MODE_DEFAULT: str = DATA_MODE_DH_ONLY
 DATA_MODE_METHOD10_DEFAULT: str = DATA_MODE_DM_ONLY  # aligns with DR2 D_M/r_d evaluation
@@ -224,11 +511,34 @@ DATA_MODE: str = "DH_only"     # default production scan (DH_only); Method 10 us
 # DATA_MODE = "Joint_DH_DM"    # Mixed channels — not recommended for single-template fits
 TRACER: str = "ALL_GCcomb"
 
-DATA_MODES: tuple[str, ...] = (DATA_MODE_DH_ONLY, DATA_MODE_DM_ONLY, DATA_MODE_JOINT)
-DATA_MODE_TO_QUANTITY: dict[str, str] = {
+# Per-tracer default when the caller does not pin a mode. DESI DR2 BGS is
+# isotropic D_V only (quadrupole S/N too low for a stable (D_M, D_H) split).
+TRACER_DEFAULT_MODE: dict[str, str] = {
+    "BGS_BRIGHT-21.35_GCcomb": DATA_MODE_DV_ONLY,
+    "QSO_GCcomb": DATA_MODE_ANISOTROPIC,
+    "Lya_GCcomb": DATA_MODE_ANISOTROPIC,
+    "LRG_GCcomb_z0.4-0.6": DATA_MODE_ANISOTROPIC,
+    "LRG_GCcomb_z0.6-0.8": DATA_MODE_ANISOTROPIC,
+    "LRG+ELG_LOPnotqso_GCcomb": DATA_MODE_ANISOTROPIC,
+    "ELG_LOPnotqso_GCcomb_z1.1-1.6": DATA_MODE_ANISOTROPIC,
+    "ALL_GCcomb": DATA_MODE_MIXED,
+}
+
+DATA_MODES: tuple[str, ...] = (
+    DATA_MODE_DH_ONLY,
+    DATA_MODE_DM_ONLY,
+    DATA_MODE_DV_ONLY,
+    DATA_MODE_ANISOTROPIC,
+    DATA_MODE_MIXED,
+    DATA_MODE_JOINT,
+)
+DATA_MODE_TO_QUANTITY: dict[str, str | None] = {
     DATA_MODE_DH_ONLY: "DH_over_rs",
     DATA_MODE_DM_ONLY: "DM_over_rs",
+    DATA_MODE_DV_ONLY: "DV_over_rs",
+    DATA_MODE_ANISOTROPIC: JOINT_DH_DM,
     DATA_MODE_JOINT: JOINT_DH_DM,
+    DATA_MODE_MIXED: None,
 }
 _DATA_MODE_INPUT_ALIASES: dict[str, str] = {
     "DH_only": DATA_MODE_DH_ONLY,
@@ -237,6 +547,12 @@ _DATA_MODE_INPUT_ALIASES: dict[str, str] = {
     "DM_only": DATA_MODE_DM_ONLY,
     "DM_over_rs": DATA_MODE_DM_ONLY,
     "DM_over_rs_only": DATA_MODE_DM_ONLY,
+    "DV_only": DATA_MODE_DV_ONLY,
+    "DV_over_rs": DATA_MODE_DV_ONLY,
+    "DV_over_rs_only": DATA_MODE_DV_ONLY,
+    "anisotropic": DATA_MODE_ANISOTROPIC,
+    "mixed": DATA_MODE_MIXED,
+    "auto": DATA_MODE_MIXED,
     "Joint_DH_DM": DATA_MODE_JOINT,
     "joint_DH_DM": DATA_MODE_JOINT,
     JOINT_DH_DM: DATA_MODE_JOINT,
@@ -317,7 +633,7 @@ def normalize_data_mode(mode: str | None) -> str:
     return resolved
 
 
-def data_mode_to_quantity_filter(mode: str | None) -> str:
+def data_mode_to_quantity_filter(mode: str | None) -> str | None:
     """Translate DATA_MODE (or alias) to the row filter used in Cobaya tables."""
     return DATA_MODE_TO_QUANTITY[normalize_data_mode(mode)]
 
@@ -439,13 +755,109 @@ def resolve_cobaya_dr2_dir(local_path: str | Path | None = None) -> Path:
 def tracer_available_quantities(
     local_path: str | Path | None, tracer: str
 ) -> list[str]:
-    """Return quantity labels present in a tracer mean table."""
+    """Inventory quantity tags from the third column of a tracer mean table."""
     dr2_dir = resolve_cobaya_dr2_dir(local_path)
     mean_path = dr2_dir / f"desi_gaussian_bao_{tracer}_mean.txt"
     if not mean_path.is_file():
         return []
     _z, _obs, quantities = _parse_cobaya_mean_table(mean_path)
     return sorted(set(quantities))
+
+
+def inventory_tracer_quantities(
+    local_path: str | Path | None, tracer: str
+) -> list[str]:
+    """Parse ``desi_gaussian_bao_<TRACER>_mean.txt`` quantity column; do not assume DH."""
+    return tracer_available_quantities(local_path, tracer)
+
+
+def tracer_supports_mode(available: Sequence[str], mode: str) -> bool:
+    """True if the tracer mean file can satisfy ``mode``."""
+    av = set(available)
+    key = normalize_data_mode(mode)
+    if key == DATA_MODE_DH_ONLY:
+        return "DH_over_rs" in av
+    if key == DATA_MODE_DM_ONLY:
+        return "DM_over_rs" in av
+    if key == DATA_MODE_DV_ONLY:
+        return "DV_over_rs" in av
+    if key in {DATA_MODE_ANISOTROPIC, DATA_MODE_JOINT}:
+        return {"DM_over_rs", "DH_over_rs"} <= av
+    if key == DATA_MODE_MIXED:
+        return bool(av & {"DH_over_rs", "DM_over_rs", "DV_over_rs"})
+    return False
+
+
+def resolve_data_mode_for_tracer(
+    requested: str | None,
+    tracer: str,
+    available: Sequence[str],
+    *,
+    log: bool = True,
+) -> str | None:
+    """
+    Pick a load mode the mean file can actually satisfy.
+
+    Requested mode if that quantity exists; else fall back:
+    DH_only missing → anisotropic if both DM+DH exist;
+    anisotropic missing → DV_only if DV exists (DESI DR2 BGS = isotropic D_V only).
+    Nothing usable → None (caller skips or hard-errors if this tracer is required).
+    """
+    avail_list = list(available)
+    requested_key: str | None = None
+    if requested is not None and str(requested).strip():
+        try:
+            requested_key = normalize_data_mode(requested)
+        except ValueError:
+            requested_key = None
+
+    chosen: str | None = None
+    if requested_key and tracer_supports_mode(avail_list, requested_key):
+        chosen = requested_key
+    else:
+        if requested_key in {None, DATA_MODE_DH_ONLY, DATA_MODE_DM_ONLY, DATA_MODE_JOINT}:
+            if tracer_supports_mode(avail_list, DATA_MODE_ANISOTROPIC):
+                chosen = DATA_MODE_ANISOTROPIC
+            elif tracer_supports_mode(avail_list, DATA_MODE_DV_ONLY):
+                chosen = DATA_MODE_DV_ONLY
+        if chosen is None:
+            default = TRACER_DEFAULT_MODE.get(tracer)
+            if default and tracer_supports_mode(avail_list, default):
+                chosen = normalize_data_mode(default)
+        if chosen is None and tracer_supports_mode(avail_list, DATA_MODE_MIXED):
+            chosen = DATA_MODE_MIXED
+
+    if log:
+        req_s = requested_key or requested or "unset"
+        if chosen is None:
+            print(
+                f"[DESI LOAD] tracer={tracer} requested={req_s} "
+                f"available={avail_list} → skip (no usable quantities)"
+            )
+        elif chosen != requested_key:
+            iso = " (isotropic)" if chosen == DATA_MODE_DV_ONLY else ""
+            print(
+                f"[DESI LOAD] tracer={tracer} requested={req_s} "
+                f"available={avail_list} → using {chosen}{iso}"
+            )
+    return chosen
+
+
+def dv_over_rd_from_dm_dh(
+    z: float,
+    dm_over_rd: float,
+    dh_over_rd: float,
+) -> float:
+    """
+    Isotropic D_V/r_d from D_M/r_d and D_H/r_d.
+
+    D_V = (z D_M^2 D_H)^{1/3}, so
+    D_V/r_d = (z (D_M/r_d)^2 (D_H/r_d))^{1/3}.
+    DESI DR2 BGS at z=0.295 is published as this combination only — do not
+    invent a D_H point.
+    """
+    z_pos = max(float(z), 1e-12)
+    return float((z_pos * float(dm_over_rd) ** 2 * float(dh_over_rd)) ** (1.0 / 3.0))
 
 
 def list_desi_tracers(local_path: str | Path | None = None) -> list[str]:
@@ -617,46 +1029,45 @@ def get_data_by_mode(
     gamma: float = 10.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
     """
-    Clean data loading with safe defaults and clear warnings.
+    Load DESI DR2 rows for a tracer using the quantities the mean file actually has.
 
-    Modes: ``DH_only``, ``DM_only``, ``Joint_DH_DM`` (alias ``joint_DH_DM``).
-    Defaults to module ``DATA_MODE`` when ``mode`` is None.
-
-    Returns ``(y, cov, s, metadata)`` with masked rows in ``metadata``.
+    Modes: ``DH_only``, ``DM_only``, ``DV_only``, ``anisotropic``, ``mixed``,
+    ``Joint_DH_DM``. If ``mode`` is None, use :data:`TRACER_DEFAULT_MODE`.
+    Missing DH on BGS falls back to isotropic ``DV_only`` (no invented D_H).
     """
+    available = inventory_tracer_quantities(local_path, tracer)
     if mode is None:
-        mode = DATA_MODE
-    mode_key = normalize_data_mode(mode)
+        mode = TRACER_DEFAULT_MODE.get(tracer, DATA_MODE)
+    requested = mode
+    mode_key = resolve_data_mode_for_tracer(requested, tracer, available, log=True)
+    if mode_key is None:
+        raise ValueError(
+            f"Tracer {tracer!r} has zero usable BAO quantities "
+            f"(available={available}). Cannot load."
+        )
 
-    if mode_key == DATA_MODE_JOINT and tracer != TRACER:
-        print("⚠️  joint_DH_DM only supported on ALL_GCcomb. Switching to DH_only.")
-        mode_key = DATA_MODE_DH_ONLY
-
-    full_y, full_cov, full_s, metadata = load_desi_joint_data(
+    data = load_desi_from_cobaya_repo(
         local_path,
         tracer=tracer,
-        gamma=gamma,
+        quantity_filter=None,
     )
-    quantities = np.asarray(metadata["quantity"], dtype=str)
-
-    if mode_key == DATA_MODE_DH_ONLY:
-        mask = quantities == "DH_over_rs"
-    elif mode_key == DATA_MODE_DM_ONLY:
-        mask = quantities == "DM_over_rs"
-    elif mode_key == DATA_MODE_JOINT:
-        mask = np.ones(len(full_y), dtype=bool)
-    else:
-        raise ValueError(f"Unknown mode: {mode}")
-
+    quantities = np.asarray(data["quantity"], dtype=str)
+    q_filter = data_mode_to_quantity_filter(mode_key)
+    mask = _quantity_selection_mask(quantities.tolist(), q_filter)
     if not np.any(mask):
-        raise ValueError(f"No data available for mode='{mode_key}' on tracer='{tracer}'")
+        raise ValueError(
+            f"Tracer {tracer!r} resolved to {mode_key!r} but no matching rows remain "
+            f"(available={sorted(set(quantities.tolist()))})."
+        )
 
-    y = full_y[mask]
-    cov = full_cov[np.ix_(mask, mask)]
-    s = full_s[mask]
-    z = np.asarray(metadata["z"], dtype=float)[mask]
-    err = np.asarray(metadata["err"], dtype=float)[mask]
+    y = np.asarray(data["observable"], dtype=float)[mask]
+    cov = np.asarray(data["cov"], dtype=float)
+    idx = np.where(mask)[0]
+    cov = cov[np.ix_(idx, idx)]
+    z = np.asarray(data["z"], dtype=float)[mask]
+    err = np.asarray(data["err"], dtype=float)[mask]
     filtered_quantities = quantities[mask]
+    s = s_from_z(z, gamma=gamma)
 
     label = f"DESI_DR2_{tracer}_{mode_key}"
     from menus.astronomical.desi.analysis import prepare_covariance
@@ -665,24 +1076,32 @@ def get_data_by_mode(
     err = np.sqrt(np.clip(np.diag(cov), 0.0, None))
 
     filtered_metadata: dict[str, Any] = {
-        **metadata,
-        "data_mode": mode_key,
         "quantity": filtered_quantities,
         "z": z,
         "err": err,
+        "tracer": tracer,
         "label": label,
-        "quantity_filter": DATA_MODE_TO_QUANTITY[mode_key],
+        "source": data.get("source"),
+        "gamma": float(gamma),
+        "data_mode": mode_key,
+        "quantity_filter": q_filter,
         "quantity_types": sorted(set(filtered_quantities.tolist())),
         "mixed_channels": len(set(filtered_quantities.tolist())) > 1,
         "cov_health": cov_health,
         "n_data": len(y),
-        "requested_mode": mode,
+        "requested_mode": requested,
         "requested_tracer": tracer,
+        "available_quantities": list(available),
     }
 
     print(f"\n[DATA MODE] {mode_key} | tracer={tracer} → {len(y)} points selected")
-    if mode_key == DATA_MODE_JOINT:
-        print("  ⚠ Using mixed DH+DM vector (not recommended for periodicity tests)")
+    if mode_key == DATA_MODE_DV_ONLY:
+        print(
+            "  (DESI DR2 BGS = isotropic D_V only; quadrupole S/N too low for (D_M, D_H). "
+            "Do not invent a D_H point.)"
+        )
+    if mode_key in {DATA_MODE_JOINT, DATA_MODE_MIXED} and len(set(filtered_quantities.tolist())) > 1:
+        print("  ⚠ Mixed-quantity vector (not recommended for a single oscillation template)")
 
     return y, cov, s, filtered_metadata
 
@@ -725,9 +1144,10 @@ def load_scan_data_by_data_mode(
 
 
 # Legacy BOSS / eBOSS tables (Cobaya bao_data repo root, not desi_bao_dr2/).
+# bao_Hz_rs in CosmoMC consensus files is H(z) [km/s/Mpc], converted to D_H/r_d.
 LEGACY_QUANTITY_ALIASES: dict[str, str] = {
-    "bao_Hz_rs": "DH_over_rs",
-    "Hz_rs": "DH_over_rs",
+    "Hz_rs": "Hz_rs",
+    "bao_Hz_rs": "bao_Hz_rs",
 }
 LEGACY_BAO_DATASETS: dict[str, dict[str, str]] = {
     "DR12_LRG": {
@@ -745,6 +1165,21 @@ LEGACY_BAO_DATASETS: dict[str, dict[str, str]] = {
         "cov": "sdss_DR16_QSO_BAO_DMDH_covtot.txt",
         "survey": "eBOSS DR16",
     },
+    "DR12_CONSENSUS": {
+        "mean": "sdss_DR12Consensus_bao.dat",
+        "cov": "BAO_consensus_covtot_dM_Hz.txt",
+        "survey": "BOSS DR12 consensus",
+    },
+    "DESI_Y1_ALL": {
+        "mean": "desi_2024_gaussian_bao_ALL_GCcomb_mean.txt",
+        "cov": "desi_2024_gaussian_bao_ALL_GCcomb_cov.txt",
+        "survey": "DESI Y1",
+    },
+    "EBOSS_LYA": {
+        "mean": "desi_2024_eboss_gaussian_bao_Lya_GCcomb_mean.txt",
+        "cov": "desi_2024_eboss_gaussian_bao_Lya_GCcomb_cov.txt",
+        "survey": "eBOSS Lyα",
+    },
 }
 COMBINED_DR2_TRACER: str = "COMBINED_DR2"
 EXTENDED_BAO_TRACER: str = "DESI+LEGACY"
@@ -760,6 +1195,157 @@ def resolve_bao_data_root(local_path: str | Path | None = None) -> Path:
 
 def _normalize_legacy_quantity(label: str) -> str:
     return LEGACY_QUANTITY_ALIASES.get(label, label)
+
+
+def _is_hubble_hz_row(quantity: str, value: float) -> bool:
+    """True when a consensus-style row is H(z) [km/s/Mpc] rather than D_H/r_d."""
+    name = str(quantity)
+    if name not in {"bao_Hz_rs", "Hz_rs"}:
+        return False
+    return 40.0 < float(value) < 400.0
+
+
+def _convert_hz_rows_to_dh(
+    observable: np.ndarray,
+    quantities: list[str],
+    cov: np.ndarray,
+    *,
+    rd_mpc: float = RD_OBSERVED_MPC,
+) -> tuple[np.ndarray, list[str], np.ndarray]:
+    """
+    Map H(z) [km/s/Mpc] rows to D_H/r_d = c / (H r_d) with a Jacobian on C.
+
+    Leaves genuine D_H/r_d rows unchanged.
+    """
+    y = np.asarray(observable, dtype=float).copy()
+    q = list(quantities)
+    jac = np.eye(len(y), dtype=float)
+    converted = False
+    for i, name in enumerate(q):
+        if not _is_hubble_hz_row(name, y[i]):
+            continue
+        hubble = float(y[i])
+        dh = C_LIGHT_KM_S / (hubble * float(rd_mpc))
+        jac[i, i] = -dh / hubble
+        y[i] = dh
+        q[i] = "DH_over_rs"
+        converted = True
+    cov_out = np.asarray(cov, dtype=float)
+    if converted:
+        cov_out = jac @ cov_out @ jac.T
+    return y, q, cov_out
+
+
+def _fiducial_dv_dh_over_rd(z: float) -> tuple[float, float]:
+    """Fiducial flat-ΛCDM D_V/r_d and D_H/r_d (DESI DR2 Ω_m, H_0, r_d)."""
+    z_arr = np.array([float(z)], dtype=float)
+    scale = H0_H_UNITS / H0_FIDUCIAL_KM_S_MPC
+    dc = float(comoving_distance_hmpc(z_arr)[0] * scale)
+    dh = float(hubble_distance_hmpc(z_arr)[0] * scale)
+    z_pos = max(float(z), 1e-6)
+    dv = float(np.cbrt(z_pos * dc * dc * dh))
+    rd = float(RD_OBSERVED_MPC)
+    return dv / rd, dh / rd
+
+
+def _isotropic_dv_to_dh_block(
+    z: float,
+    dv_over_rd: float,
+    dv_err: float,
+    *,
+    survey: str,
+    source: str,
+) -> dict[str, Any]:
+    """
+    Map an isotropic D_V/r_d measurement onto D_H/r_d via fiducial α.
+
+    α = (D_V/r_d)_obs / (D_V/r_d)_fid, then D_H/r_d = α × (D_H/r_d)_fid.
+    Used only to extend the low-z end of a DH-only stack (6dF, MGS, BGS).
+    """
+    dv_fid, dh_fid = _fiducial_dv_dh_over_rd(z)
+    alpha = float(dv_over_rd) / dv_fid
+    dh = alpha * dh_fid
+    err = abs(dh) * (float(dv_err) / max(abs(float(dv_over_rd)), 1e-6))
+    return {
+        "z": np.array([float(z)], dtype=float),
+        "observable": np.array([dh], dtype=float),
+        "err": np.array([err], dtype=float),
+        "quantity": ["DH_over_rs"],
+        "quantity_filter": "DH_over_rs",
+        "quantity_types": ["DH_over_rs"],
+        "mixed_channels": False,
+        "cov": np.array([[err * err]], dtype=float),
+        "label": f"{survey}_DV_to_DH",
+        "tracer": survey,
+        "source": source,
+        "survey": survey,
+        "n_data": 1,
+        "has_full_covariance": True,
+        "isotropic_alpha": float(alpha),
+        "dv_converted": True,
+    }
+
+
+def _lowz_isotropic_dh_blocks() -> list[dict[str, Any]]:
+    """6dFGS + SDSS MGS + DESI BGS isotropic BAO, mapped to DH for s-range."""
+    blocks = [
+        _isotropic_dv_to_dh_block(
+            0.106,
+            2.976,
+            0.133,
+            survey="6dFGS",
+            source="Beutler+2011 rs/D_V=0.336±0.015 → D_V/r_d, fiducial-α DH",
+        ),
+        _isotropic_dv_to_dh_block(
+            0.15,
+            4.47,
+            0.16,
+            survey="SDSS_MGS",
+            source="Ross+2015 D_V(z=0.15)/r_d, fiducial-α DH",
+        ),
+    ]
+    try:
+        bgs = load_desi_from_cobaya_repo(
+            tracer="ALL_GCcomb",
+            quantity_filter="DV_over_rs",
+        )
+        if int(bgs.get("n_data", 0)) >= 1:
+            blocks.append(
+                _isotropic_dv_to_dh_block(
+                    float(np.asarray(bgs["z"], dtype=float).ravel()[0]),
+                    float(np.asarray(bgs["observable"], dtype=float).ravel()[0]),
+                    float(np.asarray(bgs["err"], dtype=float).ravel()[0]),
+                    survey="DESI_BGS",
+                    source=str(bgs.get("source") or "DESI DR2 ALL_GCcomb DV_over_rs"),
+                )
+            )
+    except (FileNotFoundError, ValueError):
+        pass
+    return blocks
+
+
+def _eboss_elg_dh_block() -> dict[str, Any]:
+    """Gaussian DH at z_eff=0.845 from the eBOSS ELG FSBAO grid MAP."""
+    z = np.array([0.845], dtype=float)
+    y = np.array([20.157], dtype=float)
+    err = np.array([1.80], dtype=float)
+    cov = np.diag(err ** 2)
+    return {
+        "z": z,
+        "observable": y,
+        "err": err,
+        "quantity": ["DH_over_rs"],
+        "quantity_filter": "DH_over_rs",
+        "quantity_types": ["DH_over_rs"],
+        "mixed_channels": False,
+        "cov": cov,
+        "label": "eBOSS_DR16_ELG_DH",
+        "tracer": "DR16_ELG",
+        "source": "eBOSS ELG FSBAO grid MAP (z_eff=0.845)",
+        "survey": "eBOSS DR16 ELG",
+        "n_data": 1,
+        "has_full_covariance": True,
+    }
 
 
 def _parse_legacy_mean_table(path: Path) -> tuple[np.ndarray, np.ndarray, list[str]]:
@@ -810,6 +1396,7 @@ def load_legacy_bao_dataset(
         raise ValueError(
             f"Legacy {dataset_key}: mean ({len(observable)}) vs cov ({cov.shape[0]}) mismatch"
         )
+    observable, quantities, cov = _convert_hz_rows_to_dh(observable, quantities, cov)
 
     norm_filter = normalize_quantity_filter(quantity_filter)
     mask = _quantity_selection_mask(quantities, norm_filter)
@@ -870,15 +1457,18 @@ def _stack_bao_blocks(
     cov_blocks: list[np.ndarray] = []
     sources: list[str] = []
     surveys: list[str] = []
+    dv_flags: list[bool] = []
 
     for block in blocks:
-        z_parts.append(np.asarray(block["z"], dtype=float))
+        z_b = np.asarray(block["z"], dtype=float)
+        z_parts.append(z_b)
         y_parts.append(np.asarray(block["observable"], dtype=float))
         err_parts.append(np.asarray(block["err"], dtype=float))
         q_parts.append(list(block["quantity"]))
         cov_blocks.append(np.asarray(block["cov"], dtype=float))
         sources.append(str(block.get("source", block.get("label", "unknown"))))
         surveys.append(str(block.get("survey", block.get("tracer", "unknown"))))
+        dv_flags.extend([bool(block.get("dv_converted", False))] * int(z_b.size))
 
     z_all = np.concatenate(z_parts)
     y_all = np.concatenate(y_parts)
@@ -899,15 +1489,18 @@ def _stack_bao_blocks(
     q_sorted = [q_all[i] for i in order]
     cov_sorted = cov_full[np.ix_(order, order)]
     src_sorted = []
+    dv_sorted: list[bool] = []
+    block_id_all: list[int] = []
+    local_idx_all: list[int] = []
+    for j, zp in enumerate(z_parts):
+        block_id_all.extend([j] * len(zp))
+        local_idx_all.extend(list(range(len(zp))))
+    block_id_sorted = [block_id_all[int(i)] for i in order]
+    local_sorted = [local_idx_all[int(i)] for i in order]
     for i in order:
-        block_idx = 0
-        cum = 0
-        for j, zp in enumerate(z_parts):
-            if i < cum + len(zp):
-                block_idx = j
-                break
-            cum += len(zp)
+        block_idx = block_id_all[int(i)]
         src_sorted.append(sources[block_idx])
+        dv_sorted.append(bool(dv_flags[int(i)]) if int(i) < len(dv_flags) else False)
 
     keep = np.ones(len(z_sorted), dtype=bool)
     for i in range(1, len(z_sorted)):
@@ -922,13 +1515,37 @@ def _stack_bao_blocks(
     y_out = y_sorted[idx_keep]
     err_out = err_sorted[idx_keep]
     q_out = [q_sorted[i] for i in idx_keep]
-    cov_out = cov_sorted[np.ix_(idx_keep, idx_keep)]
+    cov_native = cov_sorted[np.ix_(idx_keep, idx_keep)].copy()
+    cov_out = cov_native
     src_out = [src_sorted[i] for i in idx_keep]
+    dv_out = [dv_sorted[i] for i in idx_keep]
+    row_block_id = np.asarray([block_id_sorted[i] for i in idx_keep], dtype=int)
+    row_in_block = np.asarray([local_sorted[i] for i in idx_keep], dtype=int)
+    block_native_covs = [np.array(c, dtype=float, copy=True) for c in cov_blocks]
+    n_raw = int(len(z_sorted))
+    n_deduped = count_unique_z(z_out, tol=STANDARD_DEDUPE_Z_TOL)
 
-    from menus.astronomical.desi.analysis import prepare_covariance
+    from menus.astronomical.desi.analysis import COV_KAPPA_WARN, prepare_covariance
 
-    cov_out, cov_health = prepare_covariance(cov_out, name=label)
+    cov_out, cov_health = prepare_covariance(
+        cov_out,
+        name=label,
+        cond_threshold=COV_KAPPA_WARN,
+    )
     err_out = np.sqrt(np.clip(np.diag(cov_out), 0.0, None))
+    kappa = float(cov_health.get("condition_number") or 0.0)
+    pvalue_untrusted = bool(
+        n_deduped < n_raw
+        or kappa > COV_KAPPA_WARN
+        or not cov_health.get("is_positive_definite", True)
+    )
+    if pvalue_untrusted:
+        warn = (
+            f"do not trust p-values on this covariance "
+            f"(n_raw={n_raw}, n_deduped={n_deduped}, κ={kappa:.2e})"
+        )
+        cov_health.setdefault("warnings", []).append(warn)
+        cov_health["pvalue_untrusted"] = True
 
     return {
         "z": z_out,
@@ -940,13 +1557,22 @@ def _stack_bao_blocks(
         "quantity_types": sorted(set(q_out)),
         "mixed_channels": len(set(q_out)) > 1,
         "cov": cov_out,
+        "cov_native": cov_native,
+        "cov_pre_unique_z": np.array(cov_out, dtype=float, copy=True),
+        "row_block_id": row_block_id,
+        "row_in_block": row_in_block,
+        "block_native_covs": block_native_covs,
         "cov_health": cov_health,
         "label": label,
         "tracer": tracer,
         "source": "; ".join(dict.fromkeys(sources)),
         "stack_sources": src_out,
+        "dv_converted_rows": dv_out,
         "surveys": sorted(set(surveys)),
         "n_data": len(z_out),
+        "n_raw": n_raw,
+        "n_deduped": n_deduped,
+        "pvalue_untrusted": pvalue_untrusted,
         "has_full_covariance": True,
         "legacy_included": any("DR12" in s or "DR16" in s or "BOSS" in s or "eBOSS" in s for s in surveys),
     }
@@ -972,14 +1598,19 @@ def load_combined_dr2_data(
     tracers = ordered_tracers_for_stack(local_path)
     blocks: list[dict[str, Any]] = []
     for tracer in tracers:
+        available = inventory_tracer_quantities(local_path, tracer)
+        resolved = resolve_data_mode_for_tracer(mode_key, tracer, available, log=True)
+        if resolved is None:
+            continue
         try:
             block = load_scan_data_by_data_mode(
-                mode_key,
+                resolved,
                 local_path=local_path,
                 tracer=tracer,
                 gamma=gamma,
             )
-        except (FileNotFoundError, ValueError):
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"[DESI LOAD] tracer={tracer} skip: {exc}")
             continue
         if int(block.get("n_data", 0)) > 0:
             block["survey"] = f"DESI DR2 ({tracer})"
@@ -1034,6 +1665,12 @@ def load_extended_bao_data(
         except (FileNotFoundError, ValueError) as exc:
             print(f"  ⚠ Skipping legacy {key}: {exc}")
 
+    if quantity_filter in {None, "DH_over_rs", "DH_over_rs_only"} or mode_key == DATA_MODE_DH_ONLY:
+        # Real MAP DH only (eBOSS ELG). D_V→DH fiducial-α rows (6dF/MGS/BGS)
+        # must not enter the DH_only periodogram vector.
+        elg = _eboss_elg_dh_block()
+        blocks.append(elg)
+
     desi = load_scan_data_by_data_mode(
         mode_key,
         local_path=local_path,
@@ -1055,6 +1692,9 @@ def load_extended_bao_data(
     stacked["s"] = s_from_z(stacked["z"], gamma=gamma)
     stacked["high_power_stack"] = dedupe_z_tol <= 0.0
     stacked["dedupe_z_tol"] = dedupe_z_tol
+    if mode_key == DATA_MODE_DH_ONLY:
+        stacked = filter_dh_only_periodogram_vector(stacked)
+        stacked["s"] = s_from_z(stacked["z"], gamma=gamma)
     return stacked
 
 
@@ -1114,6 +1754,7 @@ def compute_tsb_rd(
 
     rd_predicted = delta_s_plasma * v_phase_scale * (float(rd_observed) / float(tau_period))
     rd_residual_percent = 100.0 * (rd_predicted - float(rd_observed)) / float(rd_observed)
+    calibration_break = bool(np.isfinite(rd_residual_percent) and abs(rd_residual_percent) > 50.0)
 
     return {
         "rd_predicted_mpc": float(rd_predicted),
@@ -1126,6 +1767,8 @@ def compute_tsb_rd(
         "v_phase_scale": float(v_phase_scale),
         "rd_residual_percent": float(rd_residual_percent),
         "rd_residual_fraction": float(rd_residual_percent / 100.0),
+        "calibration_break": calibration_break,
+        "quote_rd": not calibration_break,
     }
 
 
@@ -1164,6 +1807,12 @@ def print_tsb_sound_horizon_summary(
     print(f"  Residual      : {res_pct:+.2f}%")
     if tsb_rd.get("delta_s_plasma") is not None:
         print(f"  Δs_plasma     : {float(tsb_rd['delta_s_plasma']):.3f} (γ={tsb_rd.get('gamma_used', 'n/a')})")
+    if np.isfinite(res_pct) and abs(res_pct) > 50.0:
+        tsb_rd["calibration_break"] = True
+        print(
+            "  ⚠ CALIBRATION BREAK: |r_d residual| > 50%. "
+            "Do not quote this r_d as physics — γ is unset / auto-γ was circular."
+        )
 
 
 def whim_web_correction(
@@ -1788,16 +2437,20 @@ class DesiScanResult:
         lines.extend(_format_power_assessment_lines(self.power_assessment))
         if self.periodicity:
             per = self.periodicity
-            max_power = float(per["max_power"])
-            power_at_f = float(per["power_at_expected"])
+            max_power = float(per.get("power_max", per.get("max_power", float("nan"))))
+            power_at_f = float(per.get("power_at_expected", float("nan")))
             th = self.tav_harmonics or {}
-            lomb_hit = bool(th.get("lomb_detected", False))
+            lomb_hit = bool(per.get("lomb_peak_1_7", th.get("lomb_detected", False)))
             tav_hit = bool(th.get("tav_resonance_detected", False))
-            p_boot = th.get("bootstrap_p_value", per.get("pval_bootstrap", per["pval_approx"]))
+            det_hit = bool(per.get("detection", False))
+            p_boot = per.get("p_boot", th.get("bootstrap_p_value", per.get("pval_bootstrap", per.get("pval_approx"))))
+            f_max = float(per.get("f_max", per.get("max_freq", float("nan"))))
+            ratio = per.get("power_ratio")
+            ratio_s = f"{float(ratio):.4g}" if ratio is not None and np.isfinite(float(ratio)) else "n/a"
             lines.append(
-                f"1/7 track: Lomb-Scargle peak={lomb_hit} "
-                f"(power@f=1/7={power_at_f:.4e}, max={max_power:.4e} @ f={per['max_freq']:.4f}, "
-                f"bootstrap p≈{p_boot:.4g})"
+                f"1/7 track: Lomb-Scargle peak={lomb_hit} detection={det_hit} "
+                f"(power@f=1/7={power_at_f:.4e}, max={max_power:.4e} @ f={f_max:.4f}, "
+                f"ratio={ratio_s}, bootstrap p≈{p_boot:.4g})"
             )
         if self.tav_harmonics:
             th = self.tav_harmonics
@@ -1808,6 +2461,8 @@ class DesiScanResult:
                     f"1/7 track: tav-resonance residual check={tav_hit} "
                     f"(peaks={th.get('harmonic_peaks', [])})"
                 )
+                if th.get("tav_resonance_suppressed"):
+                    lines.append(f"  ⚠ {th['tav_resonance_suppressed']}")
             if th.get("bootstrap_p_value") is not None:
                 lines.append(
                     f"1/7 track: bootstrap p≈{th['bootstrap_p_value']:.4f} "
@@ -1859,18 +2514,47 @@ class DesiScanResult:
             if gamma_diag.get("gamma_jackknife_warning"):
                 lines.append(f"⚠ {gamma_diag['gamma_jackknife_warning']}")
         if self.fit:
-            a_frac = self.fit.get("A_osc_frac", self.fit.get("A_osc"))
-            lines.append(
-                f"Tau-SB fit: χ²={self.fit['chi2']:.2f} "
-                f"(reduced={self.fit.get('reduced_chi2', float('nan')):.2f}, dof={self.fit.get('dof', 'n/a')}), "
-                f"A_osc_frac≈{a_frac:.4f}"
-            )
+            primary = str(self.fit.get("primary_model") or "tau_sb")
+            dchi = None
             if self.fit.get("null_comparison"):
-                nc = self.fit["null_comparison"]
+                dchi = self.fit["null_comparison"].get("delta_chi2_vs_poly_baseline")
+            if dchi is None:
+                dchi = self.fit.get("delta_chi2")
+            if primary == "poly_baseline" or self.fit.get("tau_sb_underpowered"):
                 lines.append(
-                    f"  vs null: Δχ²={nc.get('delta_chi2_vs_null', float('nan')):.2f}, "
-                    f"ΔAIC={nc.get('delta_aic_vs_null', float('nan')):.2f}"
+                    f"Primary (poly baseline): χ²={float(self.fit.get('chi2_baseline', self.fit['chi2'])):.2f} "
+                    f"(reduced={self.fit.get('reduced_chi2', float('nan')):.2f}, "
+                    f"dof={self.fit.get('dof', 'n/a')})"
                 )
+                extra = self.fit.get("tau_sb_underpowered_extra") or {}
+                extra_dchi = extra.get("delta_chi2_vs_poly_baseline", dchi)
+                if extra_dchi is not None:
+                    n_fit = int(self.fit.get("n_data") or 0)
+                    if n_fit < 12 and abs(float(extra_dchi)) < 6.0:
+                        lines.append(
+                            f"  Tau-SB extra (underpowered, n={n_fit}): "
+                            f"Δχ²={float(extra_dchi):.2f} — not a detection"
+                        )
+                    else:
+                        lines.append(f"  vs poly baseline: Δχ²={float(extra_dchi):.2f}")
+            else:
+                a_frac = self.fit.get("A_osc_frac", self.fit.get("A_osc"))
+                lead_a = bool(self.fit.get("lead_with_A_osc", True))
+                if lead_a:
+                    lines.append(
+                        f"Tau-SB fit: χ²={self.fit['chi2']:.2f} "
+                        f"(reduced={self.fit.get('reduced_chi2', float('nan')):.2f}, "
+                        f"dof={self.fit.get('dof', 'n/a')}), "
+                        f"A_osc_frac≈{a_frac:.4f}"
+                    )
+                else:
+                    lines.append(
+                        f"Tau-SB fit: χ²={self.fit['chi2']:.2f} "
+                        f"(reduced={self.fit.get('reduced_chi2', float('nan')):.2f}, "
+                        f"dof={self.fit.get('dof', 'n/a')})"
+                    )
+                if dchi is not None:
+                    lines.append(f"  vs poly baseline: Δχ²={float(dchi):.2f}")
             if self.fit.get("gamma_jackknife"):
                 gj = self.fit["gamma_jackknife"]
                 lines.append(
@@ -1910,11 +2594,19 @@ class DesiScanResult:
             )
         if self.harmonic_binding_kit:
             sm = self.harmonic_binding_kit.get("summary") or {}
+            align = sm.get("alignment_fraction", sm.get("alignment"))
+            align_s = "null" if align is None else f"{float(align):.2f}"
+            ladder = bool(
+                sm.get(
+                    "ladder_1_7_significant",
+                    sm.get("harmonic_ladder_significant", False),
+                )
+            )
             lines.append(
                 f"Harmonic binding kit: "
                 f"transitions={sm.get('n_detected_transitions', 0)}, "
-                f"alignment={sm.get('alignment_fraction', 0.0):.2f}, "
-                f"1/7 sig={sm.get('harmonic_ladder_significant', False)}"
+                f"alignment={align_s}, "
+                f"1/7 sig={ladder}"
             )
         if self.recommended_next_steps:
             lines.append("Recommended next steps:")
@@ -2047,35 +2739,144 @@ class TauSBScanner:
         model_func: Callable[..., np.ndarray] | None = None,
         freq_range: tuple[float, float] = (0.05, 0.5),
         n_freq: int = 500,
+        n_raw: int | None = None,
+        n_deduped: int | None = None,
+        residual_source: str = "poly_baseline",
+        gamma_source: str | None = None,
+        n_bootstrap: int = 2000,
     ) -> dict[str, Any]:
+        from menus.astronomical.desi.stats import (
+            MIN_N_LOMB,
+            bootstrap_lomb_scargle_pvalue,
+            diagnose_frequency_grid,
+            evaluate_1_7_detection,
+            lomb_scargle_cyclic,
+            periodicity_json_fields,
+            search_higher_harmonics,
+            tav_harmonic_check_robust,
+        )
+
+        z = np.asarray(z, dtype=float)
+        observable = np.asarray(observable, dtype=float)
+        n_pts = int(len(z))
+        n_raw_use = int(n_raw) if n_raw is not None else n_pts
+        n_deduped_use = int(n_deduped) if n_deduped is not None else count_unique_z(z)
+        gamma_src = gamma_source or ("auto" if self.auto_calibrate_gamma else "fixed")
+        expected_f = 1.0 / self.period
+
+        def _skipped(reason: str) -> dict[str, Any]:
+            det = evaluate_1_7_detection(
+                freqs=np.asarray([]),
+                power=np.asarray([]),
+                p_boot=1.0,
+                n_raw=n_raw_use,
+                n_deduped=n_deduped_use,
+                cycles=0.0,
+                residual_source=residual_source,
+                gamma_source=gamma_src,
+                f_expected=expected_f,
+            )
+            skipped = {
+                "freqs": np.asarray([]),
+                "power": np.asarray([]),
+                "expected_f": expected_f,
+                "f_expected": expected_f,
+                "power_at_expected": float("nan"),
+                "max_power": float("nan"),
+                "power_max": float("nan"),
+                "max_freq": float("nan"),
+                "f_max": float("nan"),
+                "power_ratio": float("nan"),
+                "pval_approx": 1.0,
+                "pval_bootstrap": 1.0,
+                "p_boot": 1.0,
+                "n_raw": n_raw_use,
+                "n_deduped": n_deduped_use,
+                "cycles": 0.0,
+                "gamma_source": gamma_src,
+                "residual_source": residual_source,
+                "lomb_peak_1_7": False,
+                "detection": False,
+                "harmonic_peaks": [],
+                "fail_reasons": list(det["fail_reasons"]) + [reason],
+                "s_grid_diagnostics": {"cycles_possible": 0.0, "warning": True},
+                "residuals": np.asarray([]),
+                "s": np.asarray([]),
+                "gamma_used": float(self.gamma),
+                "tav_harmonics": {
+                    "tav_resonance_skipped": True,
+                    "tav_resonance_detected": False,
+                    "lomb_detected": False,
+                    "lomb_peak_1_7": False,
+                    "harmonic_peaks": [],
+                    "reason": reason,
+                    "tav_skip_reason": reason,
+                },
+                "skipped": True,
+                "skip_reason": reason,
+            }
+            skipped.update(periodicity_json_fields(skipped))
+            self.results["periodicity"] = skipped
+            print(f"  ⚠ Periodicity scan skipped: {reason}")
+            return skipped
+
+        if n_pts < MIN_N_LOMB:
+            return _skipped(
+                f"n={n_pts} < {MIN_N_LOMB}; Lomb-Scargle / Tav skipped (need n≥{MIN_N_LOMB})"
+            )
+
         gamma_used = self._gamma_for(z)
         s = s_from_z(z, gamma=gamma_used)
         residuals, _baseline = self.compute_residuals(z, observable, baseline_model)
-
-        from menus.astronomical.desi.stats import (
-            bootstrap_lomb_scargle_pvalue,
-            diagnose_frequency_grid,
-            search_higher_harmonics,
-        )
+        if baseline_model is not None and residual_source == "poly_baseline":
+            residual_source = "tau_sb"
 
         grid_diag = diagnose_frequency_grid(s, period=self.period)
         n_freq_use = max(n_freq, grid_diag["recommended_n_bins"])
         freqs = np.linspace(freq_range[0], freq_range[1], n_freq_use)
-        power = signal.lombscargle(s, residuals, freqs, normalize=True)
+        power = lomb_scargle_cyclic(s, residuals, freqs, normalize=True)
 
-        expected_f = 1.0 / self.period
         idx_expected = int(np.argmin(np.abs(freqs - expected_f)))
         power_at_expected = float(power[idx_expected])
         max_power = float(np.max(power))
-        boot = bootstrap_lomb_scargle_pvalue(s, residuals, freq=expected_f)
-        pval_approx = float(boot["bootstrap_p_value"])
-        tav_check = _try_tav_harmonic_check(s, residuals, period=self.period)
+        f_max = float(freqs[int(np.argmax(power))])
+        boot = bootstrap_lomb_scargle_pvalue(
+            s, residuals, freq=expected_f, n_bootstrap=int(n_bootstrap)
+        )
+        p_boot = float(boot["bootstrap_p_value"])
+        cycles = float(grid_diag.get("cycles_possible") or 0.0)
+
+        det = evaluate_1_7_detection(
+            freqs=freqs,
+            power=power,
+            p_boot=p_boot,
+            n_raw=n_raw_use,
+            n_deduped=n_deduped_use,
+            cycles=cycles,
+            residual_source=residual_source,
+            gamma_source=gamma_src,
+            f_expected=expected_f,
+        )
+
+        tav_check = tav_harmonic_check_robust(
+            s,
+            residuals,
+            period=self.period,
+            n_bootstrap=int(n_bootstrap),
+            lomb_peak_1_7=bool(det["lomb_peak_1_7"]),
+            detection=bool(det["detection"]),
+        )
         tav_check["lomb_pval_asymptotic"] = float(np.exp(-max_power))
+        tav_check["lomb_detected"] = bool(det["lomb_peak_1_7"])
+        tav_check["lomb_peak_1_7"] = bool(det["lomb_peak_1_7"])
+        if not det["lomb_peak_1_7"]:
+            tav_check["tav_resonance_detected"] = False
         higher_harmonics = search_higher_harmonics(
             residuals,
             s,
             fundamental_freq=1.0 / self.period,
             max_harmonic=5,
+            n_bootstrap=int(n_bootstrap),
             verbose=False,
         )
 
@@ -2093,15 +2894,29 @@ class TauSBScanner:
                 period=self.period,
             )
 
-        self.results["periodicity"] = {
+        per: dict[str, Any] = {
             "freqs": freqs,
             "power": power,
             "expected_f": expected_f,
+            "f_expected": expected_f,
             "power_at_expected": power_at_expected,
             "max_power": max_power,
-            "max_freq": float(freqs[int(np.argmax(power))]),
-            "pval_approx": pval_approx,
-            "pval_bootstrap": pval_approx,
+            "power_max": max_power,
+            "max_freq": f_max,
+            "f_max": f_max,
+            "power_ratio": det["power_ratio"],
+            "pval_approx": p_boot,
+            "pval_bootstrap": p_boot,
+            "p_boot": p_boot,
+            "n_raw": n_raw_use,
+            "n_deduped": n_deduped_use,
+            "cycles": cycles,
+            "gamma_source": gamma_src,
+            "residual_source": residual_source,
+            "lomb_peak_1_7": bool(det["lomb_peak_1_7"]),
+            "detection": bool(det["detection"]),
+            "fail_reasons": det["fail_reasons"],
+            "harmonic_peaks": list(tav_check.get("harmonic_peaks") or []),
             "s_grid_diagnostics": grid_diag,
             "residuals": residuals,
             "s": s,
@@ -2111,7 +2926,9 @@ class TauSBScanner:
             "fixed_gamma_diagnostic": fixed_gamma_diag,
             "gamma_diagnostics": self.results.get("gamma_diagnostics"),
         }
-        return self.results["periodicity"]
+        per.update(periodicity_json_fields(per, tav_harmonics=tav_check))
+        self.results["periodicity"] = per
+        return per
 
     def compare_models(
         self,
@@ -2296,18 +3113,27 @@ class TauSBScanner:
         fixed_A_frac: float = 0.01,
         hier_bounds: tuple[float, float] | None = None,
     ) -> dict[str, Any]:
-        from menus.astronomical.desi.stats import (
-            compute_model_comparison,
-            fit_null_model,
-            gamma_jackknife_std,
-        )
+        from menus.astronomical.desi.stats import gamma_jackknife_std
 
         gamma_used = self._gamma_for(z)
         s = s_from_z(z, gamma=gamma_used)
         amp_scale = _oscillation_scale(observable)
         n_pts = len(z)
-        # Small vectors: drop hierarchical step to avoid saturating dof.
-        use_hier = (n_pts >= 8) if fit_hier is None else bool(fit_hier)
+        use_hier_intended = (n_pts >= 8) if fit_hier is None else bool(fit_hier)
+        n_osc_intended = _oscillation_param_count(
+            fit_A=fit_A, fit_phase=fit_phase, use_hier=use_hier_intended
+        )
+        deg_intended = _baseline_degree(n_pts, n_osc_intended)
+        n_params_intended = (deg_intended + 1) + n_osc_intended
+        # n_used < n_params+6 → freeze oscillation; poly is the primary model.
+        underpowered = bool(n_pts < 12 or n_pts < n_params_intended + 6)
+        if underpowered:
+            fit_A = False
+            fit_phase = False
+            use_hier = False
+            fixed_A_frac = 0.0
+        else:
+            use_hier = use_hier_intended
         extra = _oscillation_param_count(fit_A=fit_A, fit_phase=fit_phase, use_hier=use_hier)
         deg = _baseline_degree(n_pts, extra)
 
@@ -2389,20 +3215,51 @@ class TauSBScanner:
         delta_chi2 = chi2_base - chi2_min
         pval_improvement = float(1 - chi2.cdf(delta_chi2, df=max(extra, 1)))
 
-        null_comparison = None
-        if cov is not None:
-            _null_val, chi2_null = fit_null_model(observable, cov)
-            null_comparison = compute_model_comparison(
-                chi2_min, chi2_null, n_data=len(z), n_params_model=n_params
+        extra_unconstrained: dict[str, Any] | None = None
+        if underpowered and n_pts >= 8:
+            extra_deg = _baseline_degree(n_pts, 2)
+            extra_p0 = list(baseline_params[: extra_deg + 1]) + [0.01, 0.0]
+            extra_bounds = [(None, None)] * (extra_deg + 1) + [
+                tau_amplitude_frac_bounds(mode="fit"),
+                (-np.pi, np.pi),
+            ]
+
+            def extra_model(p: np.ndarray) -> np.ndarray:
+                base = np.polyval(p[: extra_deg + 1], z)
+                osc = tau_sb_oscillatory_residual(
+                    s, A=float(p[extra_deg + 1]), period=self.period,
+                    phase=float(p[extra_deg + 2]), amplitude_scale=amp_scale,
+                )
+                return base + osc
+
+            def extra_chi2(p: np.ndarray) -> float:
+                return gaussian_chi2(observable, extra_model(p), err=err, cov=cov)
+
+            extra_res = optimize.minimize(
+                extra_chi2, extra_p0, method="L-BFGS-B", bounds=extra_bounds
             )
-            null_comparison["chi2_poly_baseline"] = float(chi2_base)
-            null_comparison["delta_chi2_vs_poly_baseline"] = float(chi2_base - chi2_min)
-            null_comparison["null_model_note"] = (
-                "Weighted-mean null is a poor reference for redshift-structured BAO; "
-                "prefer delta_chi2_vs_poly_baseline."
-            )
-            if chi2_null > 10.0 * max(chi2_base, 1.0):
-                null_comparison["null_unreliable"] = True
+            extra_unconstrained = {
+                "chi2": float(extra_res.fun),
+                "delta_chi2_vs_poly_baseline": float(chi2_base - extra_res.fun),
+                "A_osc_frac": float(extra_res.x[extra_deg + 1]),
+                "n_params": int(len(extra_res.x)),
+                "note": (
+                    f"underpowered extra (n={n_pts} < n_params+6); "
+                    "not a detection"
+                ),
+            }
+            if float(extra_unconstrained["delta_chi2_vs_poly_baseline"]) < 6.0:
+                extra_unconstrained["lead_with_A_osc"] = False
+
+        null_comparison = {
+            "chi2_poly_baseline": float(chi2_base),
+            "delta_chi2_vs_poly_baseline": float(
+                extra_unconstrained["delta_chi2_vs_poly_baseline"]
+                if extra_unconstrained is not None
+                else (chi2_base - chi2_min)
+            ),
+            "null_model": "poly_baseline",
+        }
 
         gamma_jk = None
         if self.auto_calibrate_gamma:
@@ -2430,6 +3287,12 @@ class TauSBScanner:
             desc_parts.append("phase")
         if use_hier:
             desc_parts.append("hier_frac")
+        primary_model = "poly_baseline" if underpowered else "tau_sb"
+        lead_A = bool(
+            (not underpowered)
+            and n_pts >= 12
+            and abs(float(delta_chi2)) >= 6.0
+        )
         self.results["fit"] = {
             "best_params": best_p,
             "parameter_labels": param_labels,
@@ -2446,27 +3309,48 @@ class TauSBScanner:
                 "baseline_degree": deg,
                 "parameter_labels": param_labels,
                 "description": f"{' + '.join(desc_parts)} = {n_params} parameters",
+                "n_params_intended": n_params_intended,
+                "underpowered": underpowered,
             },
             "baseline_degree": deg,
-            "A_osc_frac": a_frac,
-            "A_osc": a_frac,
-            "A_osc_physical": a_frac * amp_scale,
+            "A_osc_frac": a_frac if lead_A else (0.0 if underpowered else a_frac),
+            "A_osc": a_frac if lead_A else (0.0 if underpowered else a_frac),
+            "A_osc_physical": (a_frac if lead_A else 0.0) * amp_scale if underpowered else a_frac * amp_scale,
             "amplitude_scale": amp_scale,
-            "chi2": chi2_min,
-            "reduced_chi2": chi2_min / max(dof, 1),
-            "aic": _aic(chi2_min, n_params),
-            "bic": _bic(chi2_min, n_params, len(z)),
-            "dof": dof,
+            "primary_model": primary_model,
+            "chi2": float(chi2_base) if underpowered else chi2_min,
+            "reduced_chi2": (
+                float(chi2_base) / max(n_pts - (deg + 1), 1)
+                if underpowered
+                else chi2_min / max(dof, 1)
+            ),
+            "aic": _aic(chi2_base if underpowered else chi2_min, (deg + 1) if underpowered else n_params),
+            "bic": _bic(
+                chi2_base if underpowered else chi2_min,
+                (deg + 1) if underpowered else n_params,
+                len(z),
+            ),
+            "dof": (n_pts - (deg + 1)) if underpowered else dof,
             "n_data": len(z),
-            "n_params": n_params,
+            "n_params": (deg + 1) if underpowered else n_params,
             "chi2_baseline": chi2_base,
-            "delta_chi2": delta_chi2,
+            "delta_chi2": (
+                extra_unconstrained["delta_chi2_vs_poly_baseline"]
+                if extra_unconstrained is not None
+                else delta_chi2
+            ),
             "pval_improvement": pval_improvement,
             "null_comparison": null_comparison,
+            "tau_sb_underpowered": underpowered,
+            "tau_sb_underpowered_extra": extra_unconstrained,
+            "lead_with_A_osc": lead_A,
             "gamma_jackknife": gamma_jk,
             "gamma_used": gamma_used,
             "used_full_covariance": cov is not None,
-            "model_func": lambda zz: model_func(best_p, zz, s_from_z(zz, gamma_used)),
+            "model_func": lambda zz: (
+                np.polyval(best_p[: deg + 1], zz) if underpowered
+                else model_func(best_p, zz, s_from_z(zz, gamma_used))
+            ),
         }
         return self.results["fit"]
 
@@ -2514,13 +3398,14 @@ class TauSBScanner:
         axes[0, 0].grid(True, alpha=0.3)
 
         if "periodicity" in self.results:
-            resids = self.results["periodicity"]["residuals"]
-            s = self.results["periodicity"]["s"]
-            osc_track = tau_sb_oscillatory_residual(
-                s, A=0.02, amplitude_scale=_oscillation_scale(obs)
-            )
-            axes[0, 1].plot(z, resids, "o-", color="purple", label="Residuals")
-            axes[0, 1].plot(z, osc_track, "g--", label="Example 1/7 track")
+            resids = np.asarray(self.results["periodicity"].get("residuals", []), dtype=float)
+            s = np.asarray(self.results["periodicity"].get("s", []), dtype=float)
+            if resids.size == len(z) and s.size == len(z):
+                osc_track = tau_sb_oscillatory_residual(
+                    s, A=0.02, amplitude_scale=_oscillation_scale(obs)
+                )
+                axes[0, 1].plot(z, resids, "o-", color="purple", label="Residuals")
+                axes[0, 1].plot(z, osc_track, "g--", label="Example 1/7 track")
             axes[0, 1].axhline(0, color="gray", ls=":")
             axes[0, 1].set_xlabel("z")
             axes[0, 1].set_ylabel("Residuals")
@@ -2528,18 +3413,36 @@ class TauSBScanner:
             axes[0, 1].set_title("Residuals vs 1/7 Template")
 
         if "periodicity" in self.results:
-            freqs = self.results["periodicity"]["freqs"]
-            power = self.results["periodicity"]["power"]
-            exp_f = self.results["periodicity"]["expected_f"]
-            axes[1, 0].plot(freqs, power, "k-")
+            per_plot = self.results["periodicity"]
+            freqs = np.asarray(per_plot.get("freqs", []), dtype=float)
+            power = np.asarray(per_plot.get("power", []), dtype=float)
+            exp_f = per_plot.get("f_expected", per_plot.get("expected_f", 1.0 / self.period))
+            detected = bool(per_plot.get("detection", False))
+            if freqs.size:
+                axes[1, 0].plot(freqs, power, "k-")
             axes[1, 0].axvline(exp_f, color="red", ls="--", label=f"Expected f=1/{self.period}")
-            axes[1, 0].axvline(
-                self.results["periodicity"]["max_freq"], color="green", ls=":", label="Max power"
-            )
+            axes[1, 0].axvline(0.5, color="orange", ls="-.", label="f=0.5")
+            f_max_plot = per_plot.get("f_max", per_plot.get("max_freq"))
+            if f_max_plot is not None and np.isfinite(float(f_max_plot)):
+                axes[1, 0].axvline(float(f_max_plot), color="green", ls=":", label="Max power")
             axes[1, 0].set_xlabel("Frequency (cycles per s-unit)")
             axes[1, 0].set_ylabel("Lomb-Scargle Power")
             axes[1, 0].legend()
-            axes[1, 0].set_title("Periodicity Scan (s-space)")
+            if detected:
+                axes[1, 0].set_title("Periodicity Scan (s-space) — 1/7 peak detected")
+            else:
+                axes[1, 0].set_title("Periodicity Scan (s-space) — NULL")
+                axes[1, 0].text(
+                    0.98,
+                    0.95,
+                    "NULL",
+                    transform=axes[1, 0].transAxes,
+                    ha="right",
+                    va="top",
+                    fontsize=14,
+                    color="crimson",
+                    fontweight="bold",
+                )
             axes[1, 0].grid(True, alpha=0.3)
 
         if "model_comparison" in self.results:
@@ -2683,6 +3586,55 @@ def ensure_adequate_scan_data(
     return data, quantity_filter, notes
 
 
+def _maybe_upgrade_high_power_stack(
+    data: dict[str, Any],
+    *,
+    cobaya_path: str | Path | None,
+    tracer: str,
+    quantity_filter: str | None,
+    include_legacy_bao: bool,
+    high_power_stack: bool,
+    combine_tracers: bool,
+    gamma: float,
+) -> tuple[dict[str, Any], bool, bool, list[str]]:
+    """
+    If ALL_GCcomb DH/DM has n<8, stack BOSS/eBOSS on the same channel (not mixed).
+
+    Mixing DH+DM is forbidden. The high-power stack keeps a single observable
+    type and typically reaches n≈9, enough for tav_resonance.
+    """
+    notes: list[str] = []
+    n = int(data.get("n_data", 0))
+    if n >= TAV_RESONANCE_MIN_N or high_power_stack or include_legacy_bao or combine_tracers:
+        return data, include_legacy_bao, high_power_stack, notes
+    if tracer not in {TRACER, "ALL_GCcomb", EXTENDED_BAO_TRACER}:
+        return data, include_legacy_bao, high_power_stack, notes
+    mode = data.get("data_mode") or normalize_data_mode(quantity_filter or DATA_MODE)
+    if mode not in {DATA_MODE_DH_ONLY, DATA_MODE_DM_ONLY}:
+        return data, include_legacy_bao, high_power_stack, notes
+    try:
+        stacked = load_extended_bao_data(
+            mode,
+            local_path=cobaya_path,
+            tracer=TRACER,
+            gamma=gamma,
+            high_power_stack=True,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        notes.append(f"high-power stack unavailable ({exc}); staying at n={n}")
+        return data, include_legacy_bao, high_power_stack, notes
+    n_stack = int(stacked.get("n_data", 0))
+    if n_stack <= n:
+        notes.append(f"high-power stack n={n_stack} did not beat n={n}; keeping DR2-only")
+        return data, include_legacy_bao, high_power_stack, notes
+    notes.append(
+        f"n={n} < {TAV_RESONANCE_MIN_N}: auto-enabled DESI+legacy {mode} high-power stack "
+        f"(n={n_stack}, still single-channel — not mixed DH+DM)"
+    )
+    print(f"  → {notes[-1]}")
+    return stacked, True, True, notes
+
+
 def print_data_vector_summary(data_vector: np.ndarray) -> None:
     """Log BAO data vector size and head/tail values for quick sanity checks."""
     obs = np.asarray(data_vector, dtype=float).ravel()
@@ -2705,17 +3657,24 @@ def _print_run_manifest(
     use_covariance: bool,
     run_mcmc: bool,
     mcmc_steps: int,
+    gamma_source: str | None = None,
 ) -> None:
     print("[Tau-SB DESI] Run manifest")
     print(f"  action: {action_name or 'desi_scan'}")
     print(f"  data: live DR2 Cobaya tables ({data.get('label', 'unknown')})")
     print(f"  source file: {data.get('source', 'n/a')}")
     mode_label = data.get("data_mode") or quantity_filter or "all"
-    print(f"  tracer: {tracer} | data_mode: {mode_label} | n_data: {data.get('n_data', 0)}")
+    n_used = data.get("n_used", data.get("n_data", 0))
+    print(f"  tracer: {tracer} | data_mode: {mode_label} | n_data: {n_used}")
     if data.get("high_power_stack"):
-        print(f"  stack: high-power (dedupe_z_tol={data.get('dedupe_z_tol', 0)})")
+        print(
+            f"  stack: high-power "
+            f"(n_raw={data.get('n_raw')}, n_deduped={data.get('n_deduped')}, "
+            f"analysis_dedupe_z_tol={data.get('analysis_dedupe_z_tol', STANDARD_DEDUPE_Z_TOL)})"
+        )
+    src = gamma_source or data.get("gamma_source") or ("auto" if auto_calibrate_gamma else "fixed_10")
     print(f"  pipelines: {pipelines_enabled or 'periodicity_scan'}")
-    print(f"  auto_calibrate_gamma: {auto_calibrate_gamma} | full_covariance: {use_covariance}")
+    print(f"  auto_calibrate_gamma: {auto_calibrate_gamma} | gamma_source={src} | full_covariance: {use_covariance}")
     if run_mcmc:
         print(f"  mcmc_steps: {mcmc_steps}")
     else:
@@ -2733,14 +3692,12 @@ def _print_run_manifest(
 
     z_arr = data.get("z")
     if z_arr is not None and len(z_arr) >= 2:
-        g = calibrate_gamma_from_hierarchy(
-            z_min=float(np.min(z_arr)),
-            z_max=float(np.max(z_arr)),
-            n_hier=N_HIER_BINDING,
-        )
-        s_arr = s_from_z(z_arr, gamma=g)
+        s_arr = s_from_z(z_arr, gamma=GAMMA_REFERENCE)
         diag = diagnose_frequency_grid(s_arr)
-        print(f"  s-grid: Δs={diag['s_range']:.3f}, cycles@1/7={diag['cycles_possible']:.2f}")
+        print(
+            f"  s-grid at γ={GAMMA_REFERENCE:g}: Δs={diag['s_range']:.3f}, "
+            f"cycles@1/7={diag['cycles_possible']:.2f}"
+        )
         if diag["warning"]:
             print(f"  ⚠ {diag['warning_message']}")
     n_pts = int(data.get("n_data", 0))
@@ -2750,16 +3707,53 @@ def _print_run_manifest(
     )
     if mix_warn:
         print(f"  ⚠ {mix_warn}")
-    if n_pts < 8:
-        print(f"  ⚠ n={n_pts}: underpowered for tav_resonance periodogram (need n≥8)")
+    if n_pts < TAV_RESONANCE_MIN_N:
+        print(
+            f"  ⚠ n={n_pts}: still underpowered for tav_resonance (need n≥{TAV_RESONANCE_MIN_N}); "
+            "high-power DH/DM stack was not available or did not raise n"
+        )
+    n_raw = data.get("n_raw")
+    n_deduped = data.get("n_deduped")
+    n_used = data.get("n_used", n_deduped)
+    if n_raw is not None and n_deduped is not None:
+        print(
+            f"  n_raw={int(n_raw)} n_deduped={int(n_deduped)} n_used={int(n_used or n_deduped)} "
+            f"(analysis unique-z at |Δz|≤{data.get('analysis_dedupe_z_tol', STANDARD_DEDUPE_Z_TOL)})"
+        )
+        if int(n_deduped) < int(n_raw):
+            print(
+                "  unique-z analysis vector has no twin-z pairs "
+                f"(dropped {int(n_raw) - int(n_deduped)} near-duplicate redshifts from the fit)"
+            )
     cov_health = data.get("cov_health")
     if isinstance(cov_health, dict) and cov_health.get("n"):
+        from menus.astronomical.desi.analysis import COV_KAPPA_WARN
+
         kappa = cov_health.get("condition_number")
         reg = cov_health.get("regularization_applied", False)
+        pd_ok = cov_health.get("is_positive_definite", True)
+        cov_n = data.get("cov_n", cov_health.get("cov_n", cov_health.get("n")))
+        rebuilt = data.get("cov_rebuilt_after_dedupe", cov_health.get("cov_rebuilt_after_dedupe"))
         print(
-            f"  cov: κ={kappa:.2e}, λ_min={cov_health.get('min_eigenvalue', float('nan')):.2e}"
+            f"  cov: n={cov_n} κ={kappa:.2e}, λ_min={cov_health.get('min_eigenvalue', float('nan')):.2e}"
             + (f", Tikhonov ε={cov_health.get('regularization_strength', 0):.2e}" if reg else "")
+            + (f", rebuilt_after_dedupe={rebuilt}" if rebuilt is not None else "")
         )
+        rebuilt_flag = bool(rebuilt) if rebuilt is not None else True
+        if not rebuilt_flag:
+            print(
+                f"  ⚠ rebuild no-op / cond high (κ={float(kappa) if kappa is not None else float('nan'):.2e}); "
+                "do not quote p-values"
+            )
+        elif kappa is not None and np.isfinite(float(kappa)) and float(kappa) > COV_KAPPA_WARN:
+            print(
+                f"  ⚠ cov κ={float(kappa):.2e} > {COV_KAPPA_WARN:.0e}: "
+                "regularize; do not trust p-values"
+            )
+        if not pd_ok:
+            print("  ⚠ covariance not positive definite after augmentation; regularized, p-values untrusted")
+        if cov_health.get("pvalue_untrusted") or data.get("pvalue_untrusted"):
+            print("  ⚠ p-values untrusted (rebuild no-op / cond high, or not PD)")
         for warn in cov_health.get("warnings") or []:
             print(f"  ⚠ cov: {warn}")
 
@@ -2899,9 +3893,20 @@ def run_desi_scan(
         cobaya_path=cobaya_path,
         tracer=tracer,
         quantity_filter=quantity_filter,
+        data_mode=None,
         include_legacy_bao=include_legacy_bao,
         combine_tracers=combine_tracers,
         high_power_stack=high_power_stack,
+    )
+    data, include_legacy_bao, high_power_stack, stack_notes = _maybe_upgrade_high_power_stack(
+        data,
+        cobaya_path=cobaya_path,
+        tracer=tracer,
+        quantity_filter=quantity_filter,
+        include_legacy_bao=include_legacy_bao,
+        high_power_stack=high_power_stack,
+        combine_tracers=combine_tracers,
+        gamma=gamma,
     )
     data, quantity_filter, power_notes = ensure_adequate_scan_data(
         data,
@@ -2911,6 +3916,63 @@ def run_desi_scan(
         action_name=action_name,
         run_changepoints=run_changepoints,
     )
+    for note in stack_notes + power_notes:
+        print(f"  ⚠ {note}")
+
+    if run_fit or compare_models:
+        validate_single_channel_fit_data(data, action_name=action_name)
+
+    mode_now = data.get("data_mode") or normalize_data_mode(quantity_filter or DATA_MODE)
+    if mode_now == DATA_MODE_DH_ONLY:
+        data = filter_dh_only_periodogram_vector(data)
+
+    if data.get("n_raw") is None:
+        data["n_raw"] = int(len(np.asarray(data["z"]).ravel()))
+    data = apply_analysis_z_dedupe(data, tol=STANDARD_DEDUPE_Z_TOL)
+    data.setdefault("p_values_trusted", not bool(data.get("pvalue_untrusted", False)))
+
+    z = data["z"]
+    obs = data["observable"]
+    err = data["err"]
+    cov = data.get("cov") if use_covariance else None
+    n_pts = int(len(np.asarray(z).ravel()))
+    if cov is not None:
+        cov = np.asarray(cov, dtype=float)
+        if cov.shape != (n_pts, n_pts):
+            print(
+                f"  ⚠ refusing cov {tuple(cov.shape)} for n_used={n_pts} "
+                "(pre-dedupe matrix); p-values untrusted, no whitening"
+            )
+            cov = None
+            data["cov"] = None
+            data["p_values_trusted"] = False
+            data["pvalue_untrusted"] = True
+            data["cov_rebuilt_after_dedupe"] = False
+
+    from menus.astronomical.desi.stats import diagnose_frequency_grid
+
+    s_probe = data.get("s")
+    if s_probe is None:
+        s_probe = s_from_z(z, gamma=scanner.gamma)
+    grid_probe = diagnose_frequency_grid(np.asarray(s_probe, dtype=float), period=scanner.period)
+    n_pts = int(len(np.asarray(z).ravel()))
+    cycles = float(grid_probe.get("cycles_possible") or 0.0)
+    if auto_calibrate_gamma and (n_pts < TAV_RESONANCE_MIN_N or cycles < 2.0):
+        print(
+            f"  ⚠ Auto-γ disabled: n={n_pts}, τ-cycles≈{cycles:.2f} "
+            f"(need n≥{TAV_RESONANCE_MIN_N} and ≳2 τ-cycles; ~1 cycle is circular). "
+            f"Using fixed γ={scanner.gamma}."
+        )
+        auto_calibrate_gamma = False
+        scanner.auto_calibrate_gamma = False
+
+    gamma_source = (
+        "fixed_10"
+        if (not auto_calibrate_gamma and abs(float(scanner.gamma) - GAMMA_REFERENCE) < 1e-9)
+        else ("auto" if auto_calibrate_gamma else "fixed")
+    )
+    data["gamma_source"] = gamma_source
+
     _print_run_manifest(
         action_name=action_name,
         pipelines_enabled=pipelines_enabled,
@@ -2921,34 +3983,51 @@ def run_desi_scan(
         use_covariance=use_covariance,
         run_mcmc=run_mcmc,
         mcmc_steps=mcmc_steps,
+        gamma_source=gamma_source,
     )
-    for note in power_notes:
-        print(f"  ⚠ {note}")
-
-    if run_fit or compare_models:
-        validate_single_channel_fit_data(data, action_name=action_name)
-
-    z = data["z"]
-    obs = data["observable"]
-    err = data["err"]
-    cov = data.get("cov") if use_covariance else None
 
     if augment_covariance and cov is not None:
-        from menus.astronomical.desi.analysis import apply_augmented_covariance
+        from menus.astronomical.desi.analysis import COV_KAPPA_WARN, apply_augmented_covariance
 
-        cov, aug_meta = apply_augmented_covariance(
-            cov,
-            z,
-            name=str(data.get("label", "bao")),
+        cov_ok = (
+            cov.shape == (n_pts, n_pts)
+            and bool(data.get("cov_rebuilt_after_dedupe"))
+            and bool(data.get("p_values_trusted"))
+            and float(data.get("cov_kappa") or np.inf) <= COV_KAPPA_WARN
+            and bool((data.get("cov_health") or {}).get("is_positive_definite", False))
         )
-        data["cov"] = cov
-        data["cov_augmented"] = aug_meta
-        err = np.sqrt(np.clip(np.diag(cov), 0.0, None))
-        data["err"] = err
-        print(
-            f"  [Covariance] Augmented with domain drift (Δγ={aug_meta['delta_gamma']:.2f}) "
-            f"+ friction P(k)∝k^{aug_meta['friction_exponent']}"
-        )
+        if not cov_ok:
+            print(
+                "  ⚠ skip domain-drift/friction augmentation until unique-z C is healthy "
+                f"(cov_n={data.get('cov_n')} n_used={n_pts} "
+                f"rebuilt={data.get('cov_rebuilt_after_dedupe')} "
+                f"κ={data.get('cov_kappa')})"
+            )
+            data["cov_augmented"] = {"skipped": True, "reason": "unique-z C not healthy"}
+        else:
+            cov, aug_meta = apply_augmented_covariance(
+                cov,
+                z,
+                name=str(data.get("label", "bao")),
+            )
+            if cov.shape != (n_pts, n_pts):
+                print("  ⚠ augmentation changed cov shape; reverting to unique-z C")
+            else:
+                data["cov"] = cov
+                data["cov_augmented"] = aug_meta
+                data["cov_health"] = aug_meta.get("cov_health") or data.get("cov_health")
+                data["cov_n"] = int(cov.shape[0])
+                data["cov_kappa"] = float(
+                    (aug_meta.get("cov_health") or {}).get("condition_number")
+                    or data.get("cov_kappa")
+                    or 0.0
+                )
+                err = np.sqrt(np.clip(np.diag(cov), 0.0, None))
+                data["err"] = err
+                print(
+                    f"  [Covariance] Augmented with domain drift (Δγ={aug_meta['delta_gamma']:.2f}) "
+                    f"+ friction P(k)∝k^{aug_meta['friction_exponent']}"
+                )
 
     geometric_likelihood: dict[str, Any] | None = None
     if cov is not None and len(obs) >= 3:
@@ -2958,18 +4037,14 @@ def run_desi_scan(
         quantity = qtypes[0] if len(qtypes) == 1 else (data.get("quantity_filter") or "DH_over_rs")
         try:
             geometric_likelihood = geometric_likelihood_summary(
-                obs,
                 z,
-                cov,
+                obs,
+                err=err,
+                cov=cov,
                 quantity=str(quantity),
             )
-            print(
-                f"  [Geometry μ] fixed-prior logL={geometric_likelihood['log_likelihood']:.2f}, "
-                f"χ²={geometric_likelihood['chi2']:.2f} "
-                f"(reduced={geometric_likelihood['reduced_chi2']:.2f})"
-            )
-        except (ValueError, np.linalg.LinAlgError) as exc:
-            print(f"  [Geometry μ] skipped: {exc}")
+        except (ValueError, np.linalg.LinAlgError, KeyError, TypeError):
+            geometric_likelihood = None
 
     if auto_calibrate_gamma and cov is not None:
         from menus.astronomical.desi.analysis import run_auto_diagnostics
@@ -3007,6 +4082,10 @@ def run_desi_scan(
         err,
         cov=cov,
         n_freq=int(n_freq) if n_freq is not None else 500,
+        n_raw=int(data.get("n_raw", len(z))),
+        n_deduped=int(data.get("n_deduped", count_unique_z(z))),
+        residual_source="poly_baseline",
+        gamma_source=gamma_source,
     )
     gamma_used = per.get("gamma_used", gamma)
 
@@ -3041,6 +4120,7 @@ def run_desi_scan(
         y_model = _tau_sb_prediction_from_fit_whim(
             fit, z=z, gamma=gamma_pred, period=scanner.period
         )
+        p_trusted = bool(data.get("p_values_trusted", not data.get("pvalue_untrusted", False)))
         residual_diag = run_master_diagnostics(
             s_grid,
             obs,
@@ -3054,6 +4134,9 @@ def run_desi_scan(
             include_binding_kit=run_binding_kit,
             z=z,
             n_hier=n_hier,
+            periodicity_detection=bool(per.get("detection", False)),
+            p_values_trusted=p_trusted,
+            cycles_possible=float(per.get("cycles") or cycles),
         )
         scanner.results["residual_diagnostics"] = residual_diag
         data["residual_diagnostics"] = residual_diag
@@ -3069,6 +4152,7 @@ def run_desi_scan(
             fit, z=z, gamma=float(gamma_used), period=scanner.period
         )
         resid_bind = np.asarray(obs, dtype=float) - np.asarray(y_bind, dtype=float)
+        p_trusted = bool(data.get("p_values_trusted", not data.get("pvalue_untrusted", False)))
         binding_kit = run_harmonic_binding_kit(
             z,
             obs,
@@ -3078,6 +4162,8 @@ def run_desi_scan(
             gamma=float(gamma_used),
             desi_tracers=[str(data.get("tracer", tracer))],
             verbose=True,
+            periodicity_detection=bool(per.get("detection", False)),
+            p_values_trusted=p_trusted,
         )
     if binding_kit is not None:
         scanner.results["harmonic_binding_kit"] = binding_kit
@@ -3152,7 +4238,7 @@ def run_desi_scan(
 
     plot_path = str(scanner.plot_all(data, save_prefix=output_prefix)) if plot else None
     tav_harmonics = per.get("tav_harmonics")
-    from menus.astronomical.desi.stats import assess_scan_power
+    from menus.astronomical.desi.stats import assess_scan_power, periodicity_json_fields
 
     grid_diag = per.get("s_grid_diagnostics") or {}
     n_params_fit = int(fit["n_params"]) if fit else None
@@ -3228,8 +4314,13 @@ def run_desi_scan(
         "data_source_file": data.get("source"),
         "tracer": result.tracer,
         "quantity_filter": quantity_filter,
-        "n_data": data.get("n_data"),
+        "n_data": data.get("n_used", data.get("n_data")),
+        "n_used": data.get("n_used", data.get("n_data")),
+        "cov_n": data.get("cov_n"),
+        "cov_kappa": data.get("cov_kappa"),
+        "cov_rebuilt_after_dedupe": bool(data.get("cov_rebuilt_after_dedupe", False)),
         "gamma_used": result.gamma_used,
+        "gamma_source": gamma_source,
         "n_hier": n_hier,
         "tau_period": period,
         "auto_calibrate_gamma": auto_calibrate_gamma,
@@ -3239,14 +4330,10 @@ def run_desi_scan(
         "mcmc_enabled": run_mcmc,
         "mcmc_steps": mcmc_steps if run_mcmc else None,
         "periodicity": {
-            "expected_f": per["expected_f"],
-            "power_at_expected": per["power_at_expected"],
-            "max_power": per["max_power"],
-            "max_freq": per["max_freq"],
-            "pval_bootstrap": per.get("pval_bootstrap", per["pval_approx"]),
-            "pval_approx": per["pval_approx"],
+            **periodicity_json_fields(per, tav_harmonics=tav_harmonics),
             "s_grid_diagnostics": per.get("s_grid_diagnostics"),
-            "lomb_detected": bool(per.get("tav_harmonics", {}).get("lomb_detected", False)),
+            "fail_reasons": per.get("fail_reasons"),
+            "residual_source": per.get("residual_source"),
         },
         "tav_harmonics": tav_harmonics,
         "power_assessment": power_assessment,
@@ -3272,8 +4359,27 @@ def run_desi_scan(
             "legacy_included": data.get("legacy_included"),
             "surveys": data.get("surveys"),
             "cov_augmented": data.get("cov_augmented"),
+            "n_raw": data.get("n_raw"),
+            "n_deduped": data.get("n_deduped"),
+            "n_used": data.get("n_used", data.get("n_data")),
+            "analysis_dedupe_z_tol": data.get("analysis_dedupe_z_tol"),
+            "p_values_trusted": bool(data.get("p_values_trusted", True)),
+            "cov_n": data.get("cov_n"),
+            "cov_kappa": data.get("cov_kappa"),
+            "cov_rebuilt_after_dedupe": bool(data.get("cov_rebuilt_after_dedupe", False)),
+            "kappa_pre_dedupe": data.get("kappa_pre_dedupe"),
+            "pvalue_untrusted": bool(
+                data.get("pvalue_untrusted")
+                or (data.get("cov_health") or {}).get("pvalue_untrusted")
+            ),
         },
-        "geometric_likelihood": geometric_likelihood,
+        "diagnostics": {
+            "geometry_mu": geometric_likelihood,
+            "whim_web": (residual_diag or {}).get("whim_web") if residual_diag else None,
+            "whim_signature_detected": bool(
+                ((residual_diag or {}).get("whim_web") or {}).get("whim_signature_detected", False)
+            ),
+        },
         "non_circular_tau_sb_fit": per.get("non_circular_tau_sb_fit"),
         "fit": (
             {
@@ -3291,6 +4397,10 @@ def run_desi_scan(
                 "A_osc_frac": float(fit.get("A_osc_frac", fit.get("A_osc", 0.0))),
                 "A_osc_physical": fit.get("A_osc_physical"),
                 "null_comparison": fit.get("null_comparison"),
+                "primary_model": fit.get("primary_model"),
+                "tau_sb_underpowered": fit.get("tau_sb_underpowered"),
+                "tau_sb_underpowered_extra": fit.get("tau_sb_underpowered_extra"),
+                "lead_with_A_osc": fit.get("lead_with_A_osc"),
                 "gamma_jackknife": fit.get("gamma_jackknife"),
                 "used_full_covariance": fit["used_full_covariance"],
             }
@@ -3408,6 +4518,15 @@ def main(argv: list[str] | None = None) -> int:
             desc = DESI_TRACERS.get(key, "")
             print(f"  {key}: {desc}")
         return 0
+
+    from superblock_mode import print_retired
+
+    print_retired("TAU_SB_DESI", "scanner CLI")
+    print(
+        "[Superblock Residual Engine] DESI scoring CLI is retired. "
+        "Loaders remain importable. Tau/5D templates were not applied."
+    )
+    return 0
 
     if args.batch_tracers:
         from menus.astronomical.desi.production import run_batch_tracer_scan

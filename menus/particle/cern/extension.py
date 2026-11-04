@@ -23,9 +23,11 @@ SUBMENU_TITLE = "CERN Open Data"
 
 MENU_ACTIONS = [
     "Pull Datasets from Open Archives",
+    "Pull ATLAS Open Data (atlasopenmagic)",
     "Analyze CMS NanoAOD",
     "CMS 7-Fold Muon Tav Analysis",
     "CMS Full-Dataset 7-Fold Scan",
+    "ATLAS Open Data Lepton Scan",
     "Run MC Validation Suite",
     "Preregistered Recoil q_T Study (HEP Controls)",
     "Analyze ALICE ROOT Sample",
@@ -68,6 +70,102 @@ def entry_fields(action: str) -> list[dict]:
         ]
     if action == "List Cached Datasets":
         return []
+    if action == "Pull ATLAS Open Data (atlasopenmagic)":
+        from menus.particle.atlas.manifest import ATLAS_MANIFEST, DEFAULT_PROTOCOL, DEFAULT_RELEASE
+
+        return [
+            {
+                "key": "targets",
+                "label": "ATLAS targets (comma-separated)",
+                "default": "atlas_2lep_data_A",
+                "required": False,
+                "hint": "Manifest keys or 'all' — " + ", ".join(ATLAS_MANIFEST.keys()),
+            },
+            {
+                "key": "release",
+                "label": "atlasopenmagic release",
+                "default": DEFAULT_RELEASE,
+                "required": False,
+                "hint": "Education: 2020e-13tev | Research: 2024r-pp",
+                "choices": [
+                    "2020e-13tev",
+                    "2016e-8tev",
+                    "2025e-13tev-beta",
+                    "2024r-pp",
+                    "2024r-hi",
+                ],
+            },
+            {
+                "key": "protocol",
+                "label": "Transfer protocol",
+                "default": DEFAULT_PROTOCOL,
+                "required": False,
+                "hint": "https | root (fsspec-xrootd) | eos",
+                "choices": ["https", "root", "eos"],
+            },
+            {
+                "key": "force_refresh",
+                "label": "Force refresh",
+                "default": "no",
+                "required": False,
+                "choices": ["no", "yes"],
+            },
+        ]
+    if action == "ATLAS Open Data Lepton Scan":
+        from menus.particle.atlas.manifest import ATLAS_MANIFEST, DEFAULT_PROTOCOL
+
+        atlas_choices = list(ATLAS_MANIFEST.keys())
+        return [
+            {
+                "key": "target",
+                "label": "ATLAS manifest target or .root path",
+                "default": "atlas_2lep_data_A",
+                "required": False,
+                "hint": "Auto-fetches via atlasopenmagic if not cached",
+                "choices": atlas_choices,
+            },
+            {
+                "key": "protocol",
+                "label": "Transfer protocol",
+                "default": DEFAULT_PROTOCOL,
+                "required": False,
+                "choices": ["https", "root", "eos"],
+            },
+            {
+                "key": "lepton",
+                "label": "Lepton focus",
+                "default": "both",
+                "required": False,
+                "hint": "muon | electron | both (lep_type PDG filter)",
+                "choices": ["both", "muon", "electron"],
+            },
+            {
+                "key": "entry_stop",
+                "label": "Max events (0 = entire file)",
+                "default": "50000",
+                "required": False,
+            },
+            {
+                "key": "output_prefix",
+                "label": "Output dataset label",
+                "default": "tav_atlas_lepton",
+                "required": False,
+            },
+            {
+                "key": "force_refresh",
+                "label": "Force refresh fetch",
+                "default": "no",
+                "required": False,
+                "choices": ["no", "yes"],
+            },
+            {
+                "key": "save_plots",
+                "label": "Save plots",
+                "default": "yes",
+                "required": False,
+                "choices": ["yes", "no"],
+            },
+        ]
     if action == "CMS Full-Dataset 7-Fold Scan":
         return [
             {
@@ -190,6 +288,21 @@ def entry_instructions(action: str) -> list[str]:
     if action == "List Cached Datasets":
         return [
             "Shows manifest targets, recid, cache path, and sample ROOT files.",
+            "Also lists ATLAS Open Data cache under datasets/atlas/.",
+        ]
+    if action == "Pull ATLAS Open Data (atlasopenmagic)":
+        return [
+            "Uses atlasopenmagic: available_releases → set_release → get_urls(protocol=https|root).",
+            "Deps: atlasopenmagic, cernopendata-client, fsspec-xrootd (for root://).",
+            "Cache under datasets/atlas/<release>/<key>_<skim>/.",
+            "Default education release 2020e-13tev; 2lep/4lep skims for lepton work.",
+        ]
+    if action == "ATLAS Open Data Lepton Scan":
+        return [
+            "ATLAS outreach mini-tree (lep_pt, lep_n, lep_type) → shared Tav 7-fold engine.",
+            "Auto-fetch via atlasopenmagic when target is not cached.",
+            "Also under Particle → ATLAS Open Data (Lepton/Photon Tracks).",
+            "Reports use internal engine scores (not HEP discovery significance).",
         ]
     if action == "Analyze CMS NanoAOD":
         return [
@@ -232,6 +345,13 @@ def _yes(value: str) -> bool:
 
 
 def run_action(action: str, show_plots: bool = True, options: dict | None = None) -> str | None:
+    from superblock_mode import CONTINUE, begin_live_action
+
+    routed = begin_live_action(MODULE_TAG, action, options)
+    if routed is not CONTINUE:
+        if isinstance(routed, dict):
+            return routed.get("report_path")
+        return routed
     _ = show_plots
     options = options or {}
 
@@ -262,7 +382,93 @@ def run_action(action: str, show_plots: bool = True, options: dict | None = None
                 f"  {row['key']:22} recid={row['recid']} [{status}] "
                 f"root={row['n_root_files']} → {row['cache_dir']}"
             )
+        try:
+            from menus.particle.atlas.fetcher import list_cached_targets as list_atlas
+
+            print("[CERN OPENDATA] ATLAS Open Data cache:")
+            for row in list_atlas():
+                status = "cached" if row["cached"] else "remote"
+                print(
+                    f"  {row['key']:22} [{status}] root={row['n_root_files']} "
+                    f"→ {row['cache_dir']}"
+                )
+        except Exception as exc:
+            print(f"[CERN OPENDATA] ATLAS cache list skipped: {exc}")
         return None
+
+    if action == "Pull ATLAS Open Data (atlasopenmagic)":
+        from menus.particle.atlas.fetcher import (
+            pull_open_archives as atlas_pull_open_archives,
+            pull_selected_targets as atlas_pull_selected_targets,
+        )
+        from menus.particle.atlas.manifest import ATLAS_MANIFEST
+
+        force = _yes(options.get("force_refresh", "no"))
+        protocol = str(options.get("protocol") or "https").strip() or "https"
+        raw_targets = str(options.get("targets") or "atlas_2lep_data_A").strip()
+        if raw_targets.lower() in {"all", "*"}:
+            summary = atlas_pull_open_archives(force_refresh=force, protocol=protocol)
+        else:
+            names = [t.strip() for t in raw_targets.split(",") if t.strip()]
+            if not names:
+                names = list(ATLAS_MANIFEST.keys())[:1]
+            summary = atlas_pull_selected_targets(
+                names,
+                force_refresh=force,
+                params={"protocol": protocol, "restore_archived": "yes"},
+            )
+        print(f"[ATLAS OPENDATA] Downloaded: {summary.downloaded}")
+        print(f"[ATLAS OPENDATA] Skipped: {summary.skipped_done + summary.skipped_existing}")
+        if summary.failed:
+            for key, msg in summary.failed.items():
+                print(f"[ATLAS OPENDATA] FAILED {key}: {msg}")
+        return None
+
+    if action == "ATLAS Open Data Lepton Scan":
+        from menus.particle.atlas.analyzer import tav_analyze_atlas_leptons_from_file
+        from menus.particle.atlas.fetcher import ensure_atlas_target, resolve_root_path
+        from menus.particle.atlas.manifest import resolve_target_key
+
+        target = str(options.get("target") or "atlas_2lep_data_A").strip()
+        protocol = str(options.get("protocol") or "https").strip() or "https"
+        lepton = str(options.get("lepton") or "both").strip() or "both"
+        force = _yes(options.get("force_refresh", "no"))
+        save_plots = _yes(options.get("save_plots", "yes"))
+        prefix = str(options.get("output_prefix") or "tav_atlas_lepton").strip()
+        try:
+            entry_stop = int(options.get("entry_stop") or 50000)
+        except ValueError:
+            entry_stop = 50000
+        stop = None if entry_stop <= 0 else entry_stop
+
+        from menus.particle.atlas.manifest import ATLAS_MANIFEST
+
+        key = resolve_target_key(target) or target
+        root = resolve_root_path(key) or resolve_root_path(target)
+        if root is None and key in ATLAS_MANIFEST:
+            print(f"[ATLAS OPENDATA] Auto-fetch {key} via atlasopenmagic…")
+            ensure_atlas_target(key, force_refresh=force, auto_fetch=True, protocol=protocol)
+            root = resolve_root_path(key)
+        if root is None:
+            print(f"[ATLAS OPENDATA] Could not resolve target: {target!r}")
+            return None
+
+        report = tav_analyze_atlas_leptons_from_file(
+            root,
+            output_dir=prefix,
+            entry_stop=stop,
+            lepton=lepton,
+            save_plots=save_plots,
+            verbose=True,
+        )
+        print(f"[ATLAS OPENDATA] Report: {report.get('report_path')}")
+        sp = report.get("seven_periodic") or {}
+        if sp.get("significance_sigma") is not None:
+            print(
+                f"[ATLAS OPENDATA] Engine score σ: {sp['significance_sigma']:.2f} "
+                f"({sp.get('interpretation_label') or 'internal'})"
+            )
+        return report.get("report_path")
 
     if action in {
         "Run MC Validation Suite",

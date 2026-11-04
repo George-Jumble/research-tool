@@ -102,8 +102,8 @@ From Research root:
 
 From research_tool after a dataset fetch that archives to finishedA/finished2,
 look for log lines:
-  [TAV ENGINE] SFTP → user@host:...
-  [TAV ENGINE] Uploaded <file> to remote Public archive
+  [Superblock Residual Engine] SFTP → user@host:...
+  [Superblock Residual Engine] Uploaded <file> to remote Public archive
 
 
 7) Call sites (no edits needed if sections 1–4 are restored)

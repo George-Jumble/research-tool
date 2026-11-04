@@ -189,6 +189,9 @@ def _save_equation_report(payload: dict[str, Any]) -> str:
 
 
 def run_action(selection: str, show_plots: bool = True, options: dict | None = None) -> str | None:
+    from superblock_mode import RetiredModuleError, retired_message
+
+    raise RetiredModuleError(retired_message("BERARD_FRAMEWORK", selection))
     options = options or {}
 
     if selection in {"Sync Berard & Tau-Cosmology Assets", "Sync Berard Framework Assets"}:

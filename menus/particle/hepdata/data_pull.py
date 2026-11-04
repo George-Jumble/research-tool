@@ -61,6 +61,6 @@ def _run_analysis_report(query, df, x, y_total, *, domain_type: str) -> None:
         print("[CORRELATION FOUND] Anomalous phase-shift detected.")
     else:
         print("[SIGNAL STABLE] No TS dynamic deviations detected.")
-    print("\n[TAV ENGINE] Initiating MCMC statistical sweep...")
+    print("\n[Superblock Residual Engine] Initiating MCMC statistical sweep...")
     comparison = mcmc_engine.run_model_comparison(x, y_total)
     print(mcmc_engine.format_comparison_report(comparison))

@@ -353,11 +353,14 @@ def handle_pre_form(stdscr, selection: str, params: dict[str, str]) -> str | Non
 
 
 def run_action(selection: str, show_plots: bool = True, options: dict | None = None) -> None:
+    from superblock_mode import RetiredModuleError, retired_message
+
+    raise RetiredModuleError(retired_message("TSB_RESEARCH", selection))
     _ = show_plots
     options = options or {}
 
-    print(f"\n[TAV ENGINE] {DOMAIN_TITLE} — {selection}")
-    print(f"[TAV ENGINE] Λ_TSB = {LAMBDA_TSB} MeV | n_hier = {N_HIER} | sympy = {HAS_SYMPY}")
+    print(f"\n[Superblock Residual Engine] {DOMAIN_TITLE} — {selection}")
+    print(f"[Superblock Residual Engine] Λ_TSB = {LAMBDA_TSB} MeV | n_hier = {N_HIER} | sympy = {HAS_SYMPY}")
 
     if selection == "Generate Mocks":
         report = run_generate_mocks(
@@ -370,7 +373,7 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
             verbose=True,
         )
         path = _save_report("generate_mocks", report)
-        print(f"[TAV ENGINE] Report saved: {path}")
+        print(f"[Superblock Residual Engine] Report saved: {path}")
         return
 
     if selection == "Generate Full DESI Summary Dashboard":
@@ -383,13 +386,13 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
         n_used = report.get("n_residuals")
         if n_req is not None and int(n_req) != int(n_used):
             print(
-                f"[TAV ENGINE] Dashboard: {report['data_class']} | "
+                f"[Superblock Residual Engine] Dashboard: {report['data_class']} | "
                 f"n_requested={n_req} → n_residuals={n_used} (resampled for plots) | "
                 f"report={report['report_path']}"
             )
         else:
             print(
-                f"[TAV ENGINE] Dashboard: {report['data_class']} | "
+                f"[Superblock Residual Engine] Dashboard: {report['data_class']} | "
                 f"n={n_used} | report={report['report_path']}"
             )
         return
@@ -405,7 +408,7 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
             verbose=True,
         )
         path = _save_report("evolve_cylinder_state", report)
-        print(f"[TAV ENGINE] Report saved: {path}")
+        print(f"[Superblock Residual Engine] Report saved: {path}")
         return
 
     if selection == "Run Residual Diagnostics":
@@ -419,7 +422,7 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
             verbose=True,
         )
         path = _save_report("residual_diagnostics", report)
-        print(f"[TAV ENGINE] Report saved: {path}")
+        print(f"[Superblock Residual Engine] Report saved: {path}")
         return
 
     if selection == "Calibrate SoundHorizon":
@@ -428,7 +431,7 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
             verbose=True,
         )
         path = _save_report("calibrate_sound_horizon", report)
-        print(f"[TAV ENGINE] Report saved: {path}")
+        print(f"[Superblock Residual Engine] Report saved: {path}")
         return
 
     if selection == "Fractal Tau Circle Likelihood":
@@ -461,7 +464,7 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
             verbose=True,
         )
         path = _save_report("fractal_tau_circle_likelihood", report)
-        print(f"[TAV ENGINE] Report saved: {path}")
+        print(f"[Superblock Residual Engine] Report saved: {path}")
         return
 
     if selection == "Run Falsification Suite (Methods 1,4,9)":
@@ -477,8 +480,8 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
             plot=_bool_option(options, "plot", False),
             verbose=True,
         )
-        print(f"[TAV ENGINE] Falsification suite: {report.get('verdict')}")
-        print(f"[TAV ENGINE] Report: {report.get('report_path')}")
+        print(f"[Superblock Residual Engine] Falsification suite: {report.get('verdict')}")
+        print(f"[Superblock Residual Engine] Report: {report.get('report_path')}")
         return
 
-    print(f"[TAV ENGINE] Unknown TSB research action: {selection}")
+    print(f"[Superblock Residual Engine] Unknown TSB research action: {selection}")

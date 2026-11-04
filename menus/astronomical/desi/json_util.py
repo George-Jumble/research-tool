@@ -70,6 +70,8 @@ def sanitize_for_json(obj: Any) -> Any:
                 "gamma_sensitivity_plot",
                 "jackknife_plot",
                 "rd_vs_gamma_plot",
+                "cov_chol",
+                "_cov_chol",
             }:
                 continue
             cleaned = sanitize_for_json(value)

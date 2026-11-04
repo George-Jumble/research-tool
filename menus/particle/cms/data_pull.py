@@ -202,17 +202,17 @@ def fetch_and_graph(query: str, params: dict[str, Any] | None = None) -> None:
 
     key = resolve_target_key(q)
     if key and resolve_root_path(key) is None:
-        print(f"[TAV ENGINE] Auto-fetching CERN target: {key}")
+        print(f"[Superblock Residual Engine] Auto-fetching CERN target: {key}")
         ensure_cern_target(key, force_refresh=force, auto_fetch=True)
 
     if key:
         q = key
 
-    print(f"[TAV ENGINE] CMS dataset resolved: {q}")
+    print(f"[Superblock Residual Engine] CMS dataset resolved: {q}")
     report = run_analysis(
         q,
         analysis="cms_nanoaod",
         entry_stop=entry_stop,
         output_prefix="cms_open_data",
     )
-    print(f"[TAV ENGINE] CMS Open Data report: {report.get('report_path')}")
+    print(f"[Superblock Residual Engine] CMS Open Data report: {report.get('report_path')}")

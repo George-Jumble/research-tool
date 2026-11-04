@@ -1,4 +1,4 @@
-"""Spawn TAU-SB Gateway GUI as a detached background process."""
+"""Spawn the Superblock Research Tool gateway GUI as a detached background process."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-GATEWAY_GUI_MENU_LABEL = "TAU-SB Gateway (GUI)"
+GATEWAY_GUI_MENU_LABEL = "Superblock Research Tool (GUI)"
 
 _LOG_DIR = Path.home() / "Research" / "cache" / "logs"
 _LOG_PATH = _LOG_DIR / "gateway.log"

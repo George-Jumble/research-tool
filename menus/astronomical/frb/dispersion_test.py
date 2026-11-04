@@ -307,7 +307,7 @@ class FRBDispersionTavTest:
             "node_sky_coords": self.node_sky_coords,
         }
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        print(f"[TAV ENGINE] FRB dispersion test report: {path}")
+        print(f"[Superblock Residual Engine] FRB dispersion test report: {path}")
         return path
 
 
@@ -346,22 +346,22 @@ def run_frb_dispersion_test(
             node_threshold_deg=node_threshold_deg,
         )
 
-    print(f"\n[TAV ENGINE] FRB Dispersion Tav Test — {test.catalog_path.name}")
+    print(f"\n[Superblock Residual Engine] FRB Dispersion Tav Test — {test.catalog_path.name}")
     print(
-        f"[TAV ENGINE] Geometry: {GEOMETRY_MODEL} | "
+        f"[Superblock Residual Engine] Geometry: {GEOMETRY_MODEL} | "
         f"{len(test.tav_peaks)} Tav nodes | threshold: {node_threshold_deg}° | "
         f"α={test.ladder_alpha}"
     )
 
     results = test.run_test()
-    print(f"[TAV ENGINE] KS statistic: {results.get('ks_statistic')} | p-value: {results.get('p_value')}")
-    print(f"[TAV ENGINE] Near node: {results.get('n_near_node')} | Far: {results.get('n_far_from_node')}")
+    print(f"[Superblock Residual Engine] KS statistic: {results.get('ks_statistic')} | p-value: {results.get('p_value')}")
+    print(f"[Superblock Residual Engine] Near node: {results.get('n_near_node')} | Far: {results.get('n_far_from_node')}")
     if results.get("mean_node_sep_near_deg") is not None:
         print(
-            f"[TAV ENGINE] Mean sep (near/far): "
+            f"[Superblock Residual Engine] Mean sep (near/far): "
             f"{results.get('mean_node_sep_near_deg')}° / {results.get('mean_node_sep_far_deg')}°"
         )
-    print(f"[TAV ENGINE] {results.get('interpretation')}")
+    print(f"[Superblock Residual Engine] {results.get('interpretation')}")
 
     if save_report:
         test.save_report()

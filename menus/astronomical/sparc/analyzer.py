@@ -238,6 +238,27 @@ class SPARCAnalyzer:
     def analysis_report(self, galaxy_name: str) -> dict:
         ratio = self.calculate_mass_ratio(galaxy_name)
         delta = abs(ratio - THEORY_RATIO_TARGET)
+        gal = self.get_galaxy_frame(galaxy_name)
+        v_sq_obs = gal["Vobs"].to_numpy(dtype=float) ** 2
+        v_sq_baryon = (
+            gal["Vgas"].to_numpy(dtype=float) ** 2
+            + gal["Vdisk"].to_numpy(dtype=float) ** 2
+            + gal["Vbulge"].to_numpy(dtype=float) ** 2
+        )
+        v_sq_shadow = np.maximum(0.0, v_sq_obs - v_sq_baryon)
+        from tav_shared.bound_unbound_energy import partition_energy
+
+        # V_extra (∝ V_shadow²) has no discrete Tav flag or E_th → AMBIGUOUS.
+        # It must not stay in the bound DM ledger (T1/T2/T4 unevaluable; T5 aggregator).
+        split = partition_energy(
+            v_sq_shadow,
+            e_free=v_sq_obs,
+            e_th=None,
+            is_discrete_harmonic=None,
+            tau_bind_ok=None,
+            from_total_aggregator=True,
+            ledger="deficit",
+        )
         return {
             "galaxy": galaxy_name,
             "file": self.file_path,
@@ -245,4 +266,16 @@ class SPARCAnalyzer:
             "theory_target_ratio": THEORY_RATIO_TARGET,
             "delta_from_theory": delta,
             "within_10_percent": delta <= THEORY_RATIO_TARGET * 0.1,
+            "E_bound_clean": float(split["sum_E_b"]),
+            "E_unbound_clean": float(split["sum_E_u"]),
+            "bound_flag_clean": bool(split["n_bound"] > 0),
+            "f_b": float(split["sum_E_b"] / max(split["sum_E_tot"], 1e-30)),
+            "f_u": float(split["sum_E_u"] / max(split["sum_E_tot"], 1e-30)),
+            "n_ambiguous": int(split["n_ambiguous"]),
+            "energy_ledger": "deficit",
+            "note_energy": (
+                "mean_shadow_baryon_ratio still uses raw V_shadow²/V_baryon² (E_tot extra). "
+                "Without discrete-harmonic / E_th columns those extras are AMBIGUOUS and "
+                "are booked as E_unbound_clean, not bound DM."
+            ),
         }

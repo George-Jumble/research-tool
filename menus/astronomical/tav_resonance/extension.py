@@ -273,7 +273,7 @@ def _resolve_frb_void_paths(options: dict) -> tuple[Path, Path]:
     frb_raw = (options.get("frb_catalog") or "").strip() or None
     void_raw = (options.get("void_catalog") or "").strip() or None
     if not frb_raw and not void_raw:
-        print(f"[TAV ENGINE] Auto-detecting / auto-pulling datasets in {DATASETS_DIR}/")
+        print(f"[Superblock Residual Engine] Auto-detecting / auto-pulling datasets in {DATASETS_DIR}/")
     return resolve_dataset_paths(
         frb_raw,
         void_raw,
@@ -296,7 +296,7 @@ def _run_frb_scan(options: dict, *, plot: bool) -> None:
         options.get("batch_limit")
     )
     if n_menu is not None and len(frb) > n_menu:
-        print(f"[TAV ENGINE] Subsampling FRB catalog for tav-resonance: {len(frb)} → {n_menu}")
+        print(f"[Superblock Residual Engine] Subsampling FRB catalog for tav-resonance: {len(frb)} → {n_menu}")
         frb = subsample_rows(frb, n_menu)
     cfg = TavResonanceConfig.from_defaults()
     if _yes(options.get("freeze", "yes")):
@@ -319,7 +319,7 @@ def _run_frb_scan(options: dict, *, plot: bool) -> None:
         fig.tight_layout()
         fig.savefig(plot_path, dpi=150)
         plt.close(fig)
-        print(f"[TAV ENGINE] Path plot: {plot_path}")
+        print(f"[Superblock Residual Engine] Path plot: {plot_path}")
         if parse_show_graphics(options, default="artifacts") == "popup":
             image = plt.imread(plot_path)
             plt.figure(figsize=(10, 6))
@@ -362,15 +362,18 @@ entry_instructions = tav_resonance_entry_instructions
 
 
 def run_action(selection: str, show_plots: bool = True, options: dict | None = None) -> None:
+    from superblock_mode import RetiredModuleError, retired_message
+
+    raise RetiredModuleError(retired_message("TAV_RESONANCE", selection))
     options = options or {}
     try:
         _ensure_tav_resonance()
     except ImportError as exc:
-        print("[TAV ENGINE] tav-resonance package not available.")
+        print("[Superblock Residual Engine] tav-resonance package not available.")
         print(f"[ERROR] {exc}")
         from tav_shared.tav_resonance_bootstrap import tav_resonance_install_hint
 
-        print("[TAV ENGINE] Install with:")
+        print("[Superblock Residual Engine] Install with:")
         for line in tav_resonance_install_hint().splitlines():
             print(f"  {line}")
         return
@@ -392,4 +395,4 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
         print()
         _run_frb_scan(options, plot=show_plots)
     else:
-        print(f"[TAV ENGINE] Unknown tav-resonance action: {selection}")
+        print(f"[Superblock Residual Engine] Unknown tav-resonance action: {selection}")

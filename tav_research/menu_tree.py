@@ -9,7 +9,6 @@ from __future__ import annotations
 import menus.empirical_tests.extension as empirical_tests_extension
 import menus.particle.lhcb.extension as lhcb_echo_extension
 import menus.prime_past.extension as prime_past_extension
-import menus.prime_past.bbn_menu_extension as tav_bbn_extension
 import menus.remote_ai.extension as remote_ai_extension
 import menus.astronomical.sparc.extension as sparc_extension
 from tav_shared.test_set_reset import append_reset_option
@@ -22,6 +21,7 @@ from tav_research.dataset_manager import (
 from tav_shared.clear_cache import CLEAR_CACHE_MENU_LABEL
 from tav_research.external_editor import EXTERNAL_EDITOR_MENU_LABEL
 from tav_research.gateway_launcher import GATEWAY_GUI_MENU_LABEL
+from superblock_mode import live_menu_actions
 from tav_research.registry import MODULE_EXTENSIONS
 from tav_research import registry
 
@@ -49,17 +49,26 @@ def build_menu_tree():
     domains.append("Exit")
 
     submenus = {
-        tav_bbn_extension.SUBMENU_TITLE: append_reset_option(list(tav_bbn_extension.MENU_ACTIONS)),
-        sparc_extension.SUBMENU_TITLE: append_reset_option(list(sparc_extension.MENU_ACTIONS)),
-        lhcb_echo_extension.SUBMENU_TITLE: append_reset_option(list(lhcb_echo_extension.MENU_ACTIONS)),
+        sparc_extension.SUBMENU_TITLE: append_reset_option(
+            live_menu_actions(sparc_extension.MODULE_TAG, sparc_extension.MENU_ACTIONS)
+        ),
+        lhcb_echo_extension.SUBMENU_TITLE: append_reset_option(
+            live_menu_actions(lhcb_echo_extension.MODULE_TAG, lhcb_echo_extension.MENU_ACTIONS)
+        ),
     }
     if registry.frb_web_extension is not None:
         submenus[registry.frb_web_extension.SUBMENU_TITLE] = append_reset_option(
-            list(registry.frb_web_extension.MENU_ACTIONS)
+            live_menu_actions(
+                registry.frb_web_extension.MODULE_TAG,
+                registry.frb_web_extension.MENU_ACTIONS,
+            )
         )
     if registry.tau_sb_desi_extension is not None:
         submenus[registry.tau_sb_desi_extension.SUBMENU_TITLE] = append_reset_option(
-            list(registry.tau_sb_desi_extension.MENU_ACTIONS)
+            live_menu_actions(
+                registry.tau_sb_desi_extension.MODULE_TAG,
+                registry.tau_sb_desi_extension.MENU_ACTIONS,
+            )
         )
     if registry.tav_resonance_extension is not None:
         submenus[registry.tav_resonance_extension.SUBMENU_TITLE] = append_reset_option(
@@ -71,7 +80,10 @@ def build_menu_tree():
         )
     if registry.tsb_casimir_extension is not None:
         submenus[registry.tsb_casimir_extension.SUBMENU_TITLE] = append_reset_option(
-            list(registry.tsb_casimir_extension.MENU_ACTIONS)
+            live_menu_actions(
+                registry.tsb_casimir_extension.MODULE_TAG,
+                registry.tsb_casimir_extension.MENU_ACTIONS,
+            )
         )
     if registry.rgc_mock_extension is not None:
         submenus[registry.rgc_mock_extension.SUBMENU_TITLE] = append_reset_option(
@@ -83,7 +95,10 @@ def build_menu_tree():
         )
     if registry.ligo_gwosc_extension is not None:
         submenus[registry.ligo_gwosc_extension.SUBMENU_TITLE] = append_reset_option(
-            list(registry.ligo_gwosc_extension.MENU_ACTIONS)
+            live_menu_actions(
+                registry.ligo_gwosc_extension.MODULE_TAG,
+                registry.ligo_gwosc_extension.MENU_ACTIONS,
+            )
         )
     if registry.lisa_pre_runs_extension is not None:
         submenus[registry.lisa_pre_runs_extension.SUBMENU_TITLE] = append_reset_option(
@@ -91,7 +106,10 @@ def build_menu_tree():
         )
     if registry.cern_opendata_extension is not None:
         submenus[registry.cern_opendata_extension.SUBMENU_TITLE] = append_reset_option(
-            list(registry.cern_opendata_extension.MENU_ACTIONS)
+            live_menu_actions(
+                registry.cern_opendata_extension.MODULE_TAG,
+                registry.cern_opendata_extension.MENU_ACTIONS,
+            )
         )
 
     repos = {
@@ -155,10 +173,14 @@ def build_menu_tree():
             "Belle II (Meson Oscillation)",
         ],
         "Prime Past Harmonic (Down Quark / Isospin)": append_reset_option(
-            [tav_bbn_extension.SUBMENU_TITLE, *prime_past_extension.MENU_ACTIONS]
+            live_menu_actions(
+                prime_past_extension.MODULE_TAG, prime_past_extension.MENU_ACTIONS
+            )
         ),
         "Superblock Empirical Tests": append_reset_option(
-            list(empirical_tests_extension.MENU_ACTIONS)
+            live_menu_actions(
+                empirical_tests_extension.MODULE_TAG, empirical_tests_extension.MENU_ACTIONS
+            )
         ),
         "Remote AI Processing": append_reset_option(list(remote_ai_extension.MENU_ACTIONS)),
     }
@@ -168,7 +190,10 @@ def build_menu_tree():
         )
     if registry.planck_cmb_extension is not None:
         repos[registry.planck_cmb_extension.SUBMENU_TITLE] = append_reset_option(
-            list(registry.planck_cmb_extension.MENU_ACTIONS)
+            live_menu_actions(
+                registry.planck_cmb_extension.MODULE_TAG,
+                registry.planck_cmb_extension.MENU_ACTIONS,
+            )
         )
     if registry.integrator_extension is not None:
         repos[registry.integrator_extension.SUBMENU_TITLE] = append_reset_option(
@@ -178,6 +203,6 @@ def build_menu_tree():
 
     module_action_map: dict[str, str] = {}
     for tag, extension in MODULE_EXTENSIONS.items():
-        for action in extension.MENU_ACTIONS:
+        for action in live_menu_actions(tag, extension.MENU_ACTIONS):
             module_action_map[action] = tag
     return domains, repos, submenus, module_action_map

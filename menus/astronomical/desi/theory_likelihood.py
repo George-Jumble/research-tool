@@ -195,6 +195,15 @@ def geometric_likelihood_summary(
     mu = tau_sb_mu(z_arr, observable_scale=scale, quantity=quantity)
     chi2 = float(gaussian_chi2(obs, mu, err=err, cov=cov))
     n = len(z_arr)
+    log_det = 0.0
+    if cov is not None:
+        cov_arr = np.asarray(cov, dtype=float)
+        sign, logdet = np.linalg.slogdet(2.0 * np.pi * cov_arr)
+        log_det = float(logdet) if sign > 0 else 0.0
+    elif err is not None:
+        e2 = np.clip(np.asarray(err, dtype=float).ravel() ** 2, 1e-30, None)
+        log_det = float(np.sum(np.log(2.0 * np.pi * e2)))
+    log_likelihood = -0.5 * (chi2 + log_det)
     return {
         "chi2": chi2,
         "ndof": max(0, n - 1),
@@ -204,4 +213,6 @@ def geometric_likelihood_summary(
         "kappa_leak": KAPPA_LEAK_DEFAULT,
         "rd_mpc": RD_OBSERVED_MPC,
         "mu_preview": mu.tolist(),
+        "log_likelihood": float(log_likelihood),
+        "logL": float(log_likelihood),
     }

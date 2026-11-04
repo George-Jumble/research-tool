@@ -53,7 +53,7 @@ def _register_ensures() -> None:
 
         force = str(options.get("force_refresh", "no")).lower() in {"yes", "y", "true", "1"}
         restore = str(options.get("restore_archived", "yes")).lower() in {"yes", "y", "true", "1"}
-        print("[TAV ENGINE] Auto-fetch: FRB + void catalogs")
+        print("[Superblock Residual Engine] Auto-fetch: FRB + void catalogs")
         ensure_frb_datasets(force_refresh=force, restore_archived=restore, auto_fetch=True)
 
     def _sparc(action: str, options: dict[str, Any]) -> None:
@@ -65,7 +65,7 @@ def _register_ensures() -> None:
         from menus.astronomical.sparc.fetcher import ensure_galaxy_csv
 
         force = str(options.get("force_refresh", "no")).lower() in {"yes", "y", "true", "1"}
-        print(f"[TAV ENGINE] Auto-fetch: SPARC galaxy {galaxy}")
+        print(f"[Superblock Residual Engine] Auto-fetch: SPARC galaxy {galaxy}")
         ensure_galaxy_csv(galaxy, force_refresh=force)
 
     def _registry(module_tag: str) -> _ModuleEnsure:
@@ -76,10 +76,10 @@ def _register_ensures() -> None:
             targets = _default_registry_targets(module_tag, action, options)
             if not targets:
                 return
-            print(f"[TAV ENGINE] Auto-fetch via registry: {module_tag} ({len(targets)} target(s))")
+            print(f"[Superblock Residual Engine] Auto-fetch via registry: {module_tag} ({len(targets)} target(s))")
             result = fetch_selected(module_tag, targets, options)
             if result.fetched:
-                print(f"[TAV ENGINE] Fetched: {', '.join(result.fetched[:6])}")
+                print(f"[Superblock Residual Engine] Fetched: {', '.join(result.fetched[:6])}")
             if result.failed:
                 for key, msg in result.failed.items():
                     raise RuntimeError(f"Dataset fetch failed for {key}: {msg}")
@@ -96,34 +96,78 @@ def _register_ensures() -> None:
         return _ensure
 
     def _cern(action: str, options: dict[str, Any]) -> None:
-        if action == "Pull Datasets from Open Archives":
+        # These actions perform the pull themselves (form protocol/release).
+        if action in {
+            "Pull Datasets from Open Archives",
+            "Pull ATLAS Open Data (atlasopenmagic)",
+            "List Cached Datasets",
+        }:
             return
+        from menus.particle.atlas.manifest import (
+            ATLAS_MANIFEST,
+            resolve_target_key as atlas_resolve,
+        )
         from menus.particle.cern.manifest import ACTION_DEFAULT_TARGETS
 
         targets = ACTION_DEFAULT_TARGETS.get(action, [])
+        form = str(options.get("target") or options.get("targets") or "").strip()
+        if form and form.lower() not in {"all", "*"}:
+            targets = [t.strip() for t in form.split(",") if t.strip()]
         if not targets:
             return
-        from menus.particle.cern.fetcher import pull_selected_targets
 
+        atlas_names = [
+            raw
+            for raw in targets
+            if atlas_resolve(raw) or raw in ATLAS_MANIFEST
+        ]
+        cern_names = [raw for raw in targets if raw not in atlas_names]
         force = str(options.get("force_refresh", "no")).lower() in {"yes", "y", "true", "1"}
         restore = str(options.get("restore_archived", "yes")).lower() in {"yes", "y", "true", "1"}
-        print(f"[TAV ENGINE] Auto-fetch: CERN Open Data ({', '.join(targets)})")
-        result = pull_selected_targets(
-            targets,
-            params={"restore_archived": "yes" if restore else "no"},
-            force_refresh=force,
-        )
-        if result.failed:
-            for key, msg in result.failed.items():
-                raise RuntimeError(f"CERN fetch failed for {key}: {msg}")
+
+        if atlas_names:
+            from menus.particle.atlas.fetcher import pull_selected_targets as atlas_pull
+
+            protocol = str(options.get("protocol") or "https").strip() or "https"
+            print(f"[Superblock Residual Engine] Auto-fetch: ATLAS Open Data ({', '.join(atlas_names)})")
+            result = atlas_pull(
+                atlas_names,
+                params={
+                    "restore_archived": "yes" if restore else "no",
+                    "protocol": protocol,
+                },
+                force_refresh=force,
+            )
+            if result.failed:
+                for key, msg in result.failed.items():
+                    raise RuntimeError(f"ATLAS fetch failed for {key}: {msg}")
+
+        if cern_names:
+            from menus.particle.cern.fetcher import pull_selected_targets
+
+            print(f"[Superblock Residual Engine] Auto-fetch: CERN Open Data ({', '.join(cern_names)})")
+            result = pull_selected_targets(
+                cern_names,
+                params={"restore_archived": "yes" if restore else "no"},
+                force_refresh=force,
+            )
+            if result.failed:
+                for key, msg in result.failed.items():
+                    raise RuntimeError(f"CERN fetch failed for {key}: {msg}")
 
     _MODULE_ENSURES["TAU_SB_DESI"] = _desi
     _MODULE_ENSURES["FRB_COSMIC_WEB_TAV"] = _frb
     _MODULE_ENSURES["SPARC"] = _sparc
     _MODULE_ENSURES["CERN_OPENDATA"] = _cern
+    def _lhcb(action: str, options: dict[str, Any]) -> None:
+        if action == "Download LHCb B-meson Dataset":
+            return
+        _registry("LHCB_TAV_ECHO")(action, options)
+
     _MODULE_ENSURES["PRIME_PAST_HARMONIC"] = _empirical_module("PRIME_PAST_HARMONIC")
     _MODULE_ENSURES["TSB_RESEARCH"] = _empirical_module("TSB_RESEARCH")
-    for tag in ("EMPIRICAL_TESTS", "LHCB_TAV_ECHO", "TAV_DATA_INTEGRATOR", "PLANCK_CMB_TAV"):
+    _MODULE_ENSURES["LHCB_TAV_ECHO"] = _lhcb
+    for tag in ("EMPIRICAL_TESTS", "TAV_DATA_INTEGRATOR", "PLANCK_CMB_TAV"):
         _MODULE_ENSURES[tag] = _registry(tag)
 
 
@@ -142,9 +186,16 @@ def _default_registry_targets(module_tag: str, action: str, options: dict[str, A
     if module_tag == "LHCB_TAV_ECHO":
         return [t.id for t in provider.list_fetchable() if "lhcb:" in t.id][:1]
     if module_tag == "CERN_OPENDATA":
+        from menus.particle.atlas.manifest import ATLAS_MANIFEST, resolve_target_key as atlas_resolve
         from menus.particle.cern.manifest import ACTION_DEFAULT_TARGETS
 
-        return [f"cern:{key}" for key in ACTION_DEFAULT_TARGETS.get(action, [])]
+        ids: list[str] = []
+        for key in ACTION_DEFAULT_TARGETS.get(action, []):
+            if atlas_resolve(key) or key in ATLAS_MANIFEST:
+                ids.append(f"atlas:{key}")
+            else:
+                ids.append(f"cern:{key}")
+        return ids
     return remote
 
 
@@ -159,7 +210,7 @@ def ensure_datasets_before_run(
     if options is None:
         options = {}
     if (module_tag, action) in MOCK_ONLY_ACTIONS:
-        print(f"[TAV ENGINE] Skipping live-data fetch for mock/toy action: {action}")
+        print(f"[Superblock Residual Engine] Skipping live-data fetch for mock/toy action: {action}")
         return
 
     _register_ensures()
@@ -170,5 +221,5 @@ def ensure_datasets_before_run(
             ext_hook(action, options)
         return
 
-    print(f"[TAV ENGINE] Dataset pipeline — pull→cache for {module_tag} / {action}")
+    print(f"[Superblock Residual Engine] Dataset pipeline — pull→cache for {module_tag} / {action}")
     ensure_fn(action, options)

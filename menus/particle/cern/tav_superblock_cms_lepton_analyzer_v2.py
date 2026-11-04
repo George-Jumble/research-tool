@@ -154,15 +154,47 @@ def tav_analyze_leptons_from_file(
     """
     Chunked full-file lepton analysis → ``tav_7fold_muon_analysis``.
 
-    Supports **Muon** (``Muon_pt``, ``nMuon``) and **Electron**
-    (``Electron_pt``, ``nElectron``) NanoAOD branches. When both exist, the
-    non-primary channel is used as an optional cross-check histogram.
+    Supports:
+    - **CMS NanoAOD** Muon / Electron branches
+    - **ATLAS Open Data** outreach ``mini`` trees (``lep_pt``, ``lep_n``, ``lep_type``)
+      via atlasopenmagic-fetched files under ``datasets/atlas/``
     """
+    path = _resolve_root(file_path)
+
+    # ATLAS Open Data mini-tree (education/research releases via atlasopenmagic)
+    try:
+        from menus.particle.atlas.fetcher import is_atlas_mini_root
+        from menus.particle.atlas.analyzer import tav_analyze_atlas_leptons_from_file
+    except ImportError:
+        is_atlas_mini_root = None  # type: ignore[assignment]
+        tav_analyze_atlas_leptons_from_file = None  # type: ignore[assignment]
+
+    if is_atlas_mini_root is not None and is_atlas_mini_root(path):
+        focus = str(lepton or "both").strip().lower()
+        if focus in {"muon", "mu", "muons"}:
+            atlas_lepton = "muon"
+        elif focus in {"electron", "e", "ele", "electrons"}:
+            atlas_lepton = "electron"
+        else:
+            atlas_lepton = "both"
+        if verbose:
+            print(f"[lepton v2] Detected ATLAS mini-tree → atlas analyzer ({atlas_lepton})")
+        assert tav_analyze_atlas_leptons_from_file is not None
+        return tav_analyze_atlas_leptons_from_file(
+            path,
+            output_dir=output_dir,
+            chunk_size=min(int(chunk_size), 100_000),
+            entry_stop=entry_stop,
+            lepton=atlas_lepton,
+            pt_bins=pt_bins,
+            pt_max_gev=pt_max_gev,
+            save_plots=save_plots,
+            verbose=verbose,
+        )
+
     lepton_key = str(lepton or "Muon").strip().title()
     if lepton_key not in LEPTON_BRANCH_SPECS:
         raise ValueError(f"Unsupported lepton: {lepton!r}")
-
-    path = _resolve_root(file_path)
     probe = discover_available_lepton_branches(path)
     if not probe["leptons"].get(lepton_key, {}).get("available"):
         avail = [k for k, v in probe["leptons"].items() if v.get("available")]

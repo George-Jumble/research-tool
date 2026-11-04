@@ -214,7 +214,7 @@ def plot_lithium_tension_heatmap(
     if show:
         plt.show()
     plt.close(fig)
-    print(f"[TAV ENGINE] Heatmap saved to {path}")
+    print(f"[Superblock Residual Engine] Heatmap saved to {path}")
     return str(path)
 
 
@@ -269,7 +269,7 @@ def save_enhanced_scan(
     if empirical_provenance:
         payload["empirical_provenance"] = empirical_provenance
     json_path.write_text(json.dumps(payload, indent=2, default=float) + "\n", encoding="utf-8")
-    print(f"[TAV ENGINE] Enhanced scan JSON saved: {json_path}")
+    print(f"[Superblock Residual Engine] Enhanced scan JSON saved: {json_path}")
     return str(json_path)
 
 
@@ -295,7 +295,7 @@ def save_best_config(
         "description": "Best Tav interference configuration for BBN lithium reduction",
     }
     path.write_text(json.dumps(payload, indent=2, default=float) + "\n", encoding="utf-8")
-    print(f"[TAV ENGINE] Best configuration saved to: {path}")
+    print(f"[Superblock Residual Engine] Best configuration saved to: {path}")
     return str(path)
 
 
@@ -351,7 +351,7 @@ def plot_comparison(
     if show:
         plt.show()
     plt.close(fig)
-    print(f"[TAV ENGINE] Comparison plot saved to: {path}")
+    print(f"[Superblock Residual Engine] Comparison plot saved to: {path}")
     return str(path)
 
 

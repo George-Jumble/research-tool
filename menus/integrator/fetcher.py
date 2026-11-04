@@ -361,7 +361,7 @@ def archive_used_datasets(paths: Iterable[Path | str]) -> List[Path]:
         try:
             src.relative_to(DATASETS_DIR.resolve())
         except ValueError:
-            print(f"[TAV ENGINE] Leaving in place (not under datasets/fits/): {src}")
+            print(f"[Superblock Residual Engine] Leaving in place (not under datasets/fits/): {src}")
             continue
 
         dest = move_to_finished_archive(
@@ -371,8 +371,8 @@ def archive_used_datasets(paths: Iterable[Path | str]) -> List[Path]:
         )
         moved.append(dest)
         append_done_entry(dest.name)
-        print(f"[TAV ENGINE] Archived integrator dataset: {src.name} -> {dest}")
+        print(f"[Superblock Residual Engine] Archived integrator dataset: {src.name} -> {dest}")
 
     if moved:
-        print(f"[TAV ENGINE] {len(moved)} file(s) moved to {FINISHED2_DIR}/")
+        print(f"[Superblock Residual Engine] {len(moved)} file(s) moved to {FINISHED2_DIR}/")
     return moved

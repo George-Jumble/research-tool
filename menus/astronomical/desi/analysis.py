@@ -13,6 +13,8 @@ from scipy import stats
 from scipy.optimize import minimize
 
 COV_COND_THRESHOLD: float = 1e10
+# Warn + regularize stacked BAO cov when κ exceeds this (p-values untrusted).
+COV_KAPPA_WARN: float = 1e3
 TIKHONOV_EPS: float = 1e-8
 
 
@@ -68,6 +70,11 @@ def check_covariance_health(cov: np.ndarray, *, name: str = "") -> dict[str, Any
         warnings.append(f"not positive definite (λ_min={min_eig:.2e})")
     if cond > COV_COND_THRESHOLD:
         warnings.append(f"ill-conditioned (κ={cond:.2e} > {COV_COND_THRESHOLD:.0e})")
+    elif np.isfinite(cond) and cond > COV_KAPPA_WARN:
+        warnings.append(
+            f"high condition number (κ={cond:.2e} > {COV_KAPPA_WARN:.0e}); "
+            "do not trust p-values without regularization"
+        )
 
     healthy = not warnings
     return {
@@ -100,6 +107,194 @@ def apply_tikhonov_regularization(
     reg_strength = float(eps * np.trace(cov) / n)
     cov_reg = cov + reg_strength * np.eye(n)
     return cov_reg, reg_strength
+
+
+def is_principal_minor_or_copy(
+    c_small: np.ndarray,
+    c_fat: np.ndarray | None,
+    keep_idx: np.ndarray | None,
+) -> bool:
+    """True if ``c_small`` is the fat matrix itself or its principal minor at keep_idx."""
+    if c_fat is None:
+        return False
+    small = np.asarray(c_small, dtype=float)
+    fat = np.asarray(c_fat, dtype=float)
+    if fat.ndim != 2 or fat.shape[0] != fat.shape[1]:
+        return False
+    if small.shape == fat.shape and np.array_equal(small, fat):
+        return True
+    if keep_idx is None or small.ndim != 2:
+        return False
+    idx = np.asarray(keep_idx, dtype=int).ravel()
+    if idx.size == 0 or int(np.max(idx)) >= fat.shape[0]:
+        return False
+    minor = fat[np.ix_(idx, idx)]
+    return bool(small.shape == minor.shape and np.array_equal(small, minor))
+
+
+def assemble_native_cov(
+    keep_idx: np.ndarray,
+    *,
+    row_block_id: np.ndarray | None,
+    row_in_block: np.ndarray | None,
+    block_native_covs: list[np.ndarray] | None,
+    fallback: np.ndarray | None,
+) -> np.ndarray:
+    """
+    Assemble a unique-z covariance from each survey's native block.
+
+    Falls back to an index-slice of ``fallback`` (unprepared stacked C).
+    """
+    idx = np.asarray(keep_idx, dtype=int).ravel()
+    n_used = int(idx.size)
+    if (
+        row_block_id is not None
+        and row_in_block is not None
+        and block_native_covs
+        and len(row_block_id) > int(np.max(idx, initial=-1))
+    ):
+        bids = np.asarray(row_block_id, dtype=int).ravel()[idx]
+        locs = np.asarray(row_in_block, dtype=int).ravel()[idx]
+        C = np.zeros((n_used, n_used), dtype=float)
+        assembled = True
+        for bid in np.unique(bids):
+            sel = np.where(bids == bid)[0]
+            loc = locs[sel]
+            b = int(bid)
+            if b < 0 or b >= len(block_native_covs):
+                assembled = False
+                break
+            blk = np.asarray(block_native_covs[b], dtype=float)
+            if int(np.max(loc, initial=-1)) >= blk.shape[0] or blk.shape[0] != blk.shape[1]:
+                assembled = False
+                break
+            C[np.ix_(sel, sel)] = blk[np.ix_(loc, loc)]
+        if assembled:
+            return C
+    if fallback is None:
+        raise ValueError("cannot assemble native cov: no block maps and no fallback C")
+    fat = np.asarray(fallback, dtype=float)
+    return np.array(fat[np.ix_(idx, idx)], dtype=float, copy=True)
+
+
+def acf_lag_cap(n: int, *, requested: int = 8) -> int:
+    """Cap ACF/LB lags: min(requested, 4, n//3). Lag 7 on n=9 is an edge artifact."""
+    n_i = max(int(n), 1)
+    return int(max(1, min(int(requested), 4, max(n_i // 3, 1))))
+
+
+def rebuild_cov_after_unique_z(
+    cov: np.ndarray,
+    keep_idx: np.ndarray,
+    *,
+    name: str = "",
+    kappa_pre: float | None = None,
+    n_pre: int | None = None,
+    fat_cov: np.ndarray | None = None,
+    assembled: np.ndarray | None = None,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """
+    Index-slice / native-assemble C to kept redshifts and recompute κ.
+
+    ``cov_rebuilt_after_dedupe`` is True only when ``cov_n == n_used`` and the
+    result is **not** bitwise-equal to the pre-dedupe matrix or its principal
+    minor (a no-op copy of the fat stack).
+    """
+    cov_arr = np.asarray(cov, dtype=float)
+    idx = np.asarray(keep_idx, dtype=int).ravel()
+    n_src = int(cov_arr.shape[0]) if cov_arr.ndim == 2 else 0
+    n_before = int(n_pre if n_pre is not None else n_src)
+    failed = {
+        "cov_n": n_src,
+        "cov_kappa": float("inf"),
+        "cov_rebuilt_after_dedupe": False,
+        "pvalue_untrusted": True,
+        "is_positive_definite": False,
+        "condition_number": float("inf"),
+        "warnings": [],
+        "n": n_src,
+    }
+    n_used = int(idx.size)
+    if assembled is not None:
+        cov_sub = np.array(assembled, dtype=float, copy=True)
+    else:
+        if cov_arr.ndim != 2 or cov_arr.shape[0] != cov_arr.shape[1]:
+            failed["warnings"] = ["covariance is not square; cannot rebuild after unique-z"]
+            return cov_arr, failed
+        if idx.size == 0 or int(np.max(idx, initial=-1)) >= n_src:
+            failed["warnings"] = ["keep_idx does not index the pre-dedupe covariance"]
+            return cov_arr, failed
+        cov_sub = np.array(cov_arr[np.ix_(idx, idx)], dtype=float, copy=True)
+
+    n_used = int(cov_sub.shape[0])
+    if n_used != int(idx.size):
+        failed["warnings"] = [f"slice size {n_used} != keep_idx {int(idx.size)}"]
+        failed["cov_n"] = n_used
+        return cov_sub, failed
+
+    fat = fat_cov if fat_cov is not None else cov_arr
+    fat_arr = np.asarray(fat, dtype=float) if fat is not None else None
+
+    # Fresh factorization of the unique-z matrix.
+    sym = 0.5 * (cov_sub + cov_sub.T)
+    factored = False
+    chol = None
+    try:
+        chol = np.linalg.cholesky(sym + TIKHONOV_EPS * np.eye(n_used))
+        factored = True
+    except np.linalg.LinAlgError:
+        factored = False
+
+    cov_out, health = prepare_covariance(
+        sym,
+        name=name or "unique_z",
+        cond_threshold=COV_KAPPA_WARN,
+        verbose=False,
+    )
+    kappa = float(health.get("condition_number") or 0.0)
+    shape_ok = int(cov_out.shape[0]) == n_used
+    minor_copy = is_principal_minor_or_copy(cov_out, fat_arr, idx)
+    if not minor_copy and fat_arr is not None:
+        minor_copy = is_principal_minor_or_copy(cov_sub, fat_arr, idx)
+
+    rebuilt = bool(shape_ok and factored and not minor_copy)
+
+    untrusted = bool(
+        not rebuilt
+        or not health.get("is_positive_definite", True)
+        or not shape_ok
+    )
+    reasons: list[str] = []
+    if not shape_ok:
+        reasons.append(f"cov_n={cov_out.shape[0]} != n_used={n_used}")
+    if minor_copy:
+        reasons.append(
+            f"rebuild no-op / cond high (κ={kappa:.2e}): C is a principal minor "
+            f"or copy of the {n_before}×{n_before} pre-dedupe matrix; do not quote p-values"
+        )
+    if not factored:
+        reasons.append("fresh Cholesky of the unique-z slice failed")
+    # Drop inherited κ>1e3 wording when the real reason is a no-op / cond high.
+    inherited = [
+        w
+        for w in (health.get("warnings") or [])
+        if "1e3" not in str(w) and "1e+03" not in str(w) and "1000" not in str(w)
+    ]
+    health["warnings"] = inherited
+    health["cov_n"] = int(cov_out.shape[0])
+    health["cov_kappa"] = kappa
+    health["cov_rebuilt_after_dedupe"] = rebuilt
+    health["kappa_pre_dedupe"] = (
+        float(kappa_pre) if kappa_pre is not None else float("nan")
+    )
+    health["n_pre_dedupe"] = int(n_before)
+    health["cov_factorization"] = "cholesky" if factored else None
+    health["is_principal_minor_or_copy"] = bool(minor_copy)
+    health["_cov_chol"] = chol
+    if reasons:
+        health.setdefault("warnings", []).extend(reasons)
+    health["pvalue_untrusted"] = bool(health.get("pvalue_untrusted") or untrusted)
+    return cov_out, health
 
 
 def prepare_covariance(
@@ -188,12 +383,28 @@ def apply_augmented_covariance(
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Augment covariance, re-run health checks, and return metadata."""
     augmented = build_augmented_cov(cov, z, **aug_kw)
-    cov_out, health = prepare_covariance(augmented, name=name or "augmented_bao")
+    cov_out, health = prepare_covariance(
+        augmented,
+        name=name or "augmented_bao",
+        cond_threshold=COV_KAPPA_WARN,
+    )
+    kappa = float(health.get("condition_number") or 0.0)
+    not_pd = not bool(health.get("is_positive_definite", True))
+    pvalue_untrusted = bool(kappa > COV_KAPPA_WARN or not_pd)
+    if pvalue_untrusted:
+        health.setdefault("warnings", []).append(
+            f"augmented cov κ={kappa:.2e} PD={not not_pd}: "
+            "regularized; do not trust p-values on this matrix"
+        )
+        health["pvalue_untrusted"] = True
     meta = {
         "augmented": True,
         "delta_gamma": aug_kw.get("delta_gamma", DELTA_GAMMA_DOMAIN),
         "friction_exponent": aug_kw.get("friction_exponent", FRICTION_P_EXPONENT),
         "base_condition_number": health.get("condition_number"),
+        "pvalue_untrusted": pvalue_untrusted,
+        "regularization_applied": health.get("regularization_applied", False),
+        "cov_health": health,
     }
     return cov_out, meta
 
@@ -399,6 +610,11 @@ def diagnose_gamma_sensitivity(
 
     if verbose:
         print(f"Best fixed γ: {best_gamma:.3f} → χ² = {best_chi2:.1f}")
+        if len(y) < 3:
+            print(
+                f"⚠️  γ sensitivity is trivial for n={len(y)} "
+                "(χ² degeneracy — do not auto-calibrate γ on ~1 point)."
+            )
 
     if as_tuple:
         return best_gamma, chi2_arr
@@ -432,6 +648,18 @@ def check_gamma_jackknife_variance(
 
     if verbose:
         print("\n=== GAMMA JACKKNIFE VARIANCE CHECK ===")
+
+    if n < 3:
+        if verbose:
+            print(f"Jackknife skipped: n={n} (need ≥3 points). Not a function bug.")
+        return {
+            "jackknife_gammas": [],
+            "n_jackknife": 0,
+            "gamma_std": float("nan"),
+            "gamma_median": float("nan"),
+            "warning": f"n={n} too small for leave-one-out jackknife",
+            "skipped": True,
+        }
 
     jackknife_gammas: list[float] = []
     for i in range(n):
@@ -763,13 +991,21 @@ def run_gamma_diagnostics(
         results["jackknife_values"] = jack_vals
         results["jackknife"] = jack
         if print_summary and len(jack_vals) <= 1:
-            print("Could not compute jackknife variance (function may not be working).")
+            n_pts = int(np.asarray(y, dtype=float).size)
+            if n_pts < 3:
+                print(f"Jackknife skipped: n={n_pts} (need ≥3). Not a function bug.")
+            else:
+                print("Could not compute jackknife variance (leave-one-out failed).")
     else:
         results["jackknife_std"] = float("nan")
         results["jackknife_values"] = []
         if print_summary:
             print("\n=== GAMMA JACKKNIFE VARIANCE CHECK ===")
-            print("No auto_calibrate_func provided — skipping jackknife check.")
+            n_pts = int(np.asarray(y, dtype=float).size)
+            if n_pts < 3:
+                print(f"Jackknife skipped: n={n_pts} (need ≥3 points).")
+            else:
+                print("No auto_calibrate_func provided — skipping jackknife check.")
 
     results["gamma_jackknife_std"] = results.get("jackknife_std")
     results["gamma_jackknife_warning"] = (
@@ -946,7 +1182,11 @@ def run_auto_diagnostics(
     )
 
     inj_results: list[dict[str, Any]] | None = None
-    if run_injection:
+    if run_injection and len(y_arr) < 3:
+        if print_summary:
+            print("Injection–recovery skipped: n<3 (bias 30–150% is not trustworthy).")
+        inj_results = None
+    elif run_injection:
         inj_results = run_injection_recovery_suite(
             s_arr,
             y_arr,
@@ -1764,8 +2004,17 @@ def analyze_residuals(
     analysis_vec = residuals
     whitened = False
     if cov is not None:
-        analysis_vec = _whiten_residuals(residuals, cov)
+        cov_arr = np.asarray(cov, dtype=float)
+        if cov_arr.shape != (n, n):
+            raise ValueError(
+                f"cov shape {cov_arr.shape} incompatible with n_used={n}; "
+                "rebuild covariance after unique-z before whitening"
+            )
+        analysis_vec = _whiten_residuals(residuals, cov_arr)
         whitened = True
+
+    lag_cap = acf_lag_cap(n, requested=int(max_lag))
+    bg_lags = acf_lag_cap(n, requested=int(breusch_godfrey_lags))
 
     results: dict[str, Any] = {
         "n": int(n),
@@ -1773,6 +2022,8 @@ def analyze_residuals(
         "whitened": whitened,
         "analysis_vector": np.asarray(analysis_vec, dtype=float).tolist(),
         "significance_threshold": float(_residual_significance_threshold(n)),
+        "acf_max_lag_used": int(lag_cap),
+        "cov_n": int(n) if cov is not None else None,
     }
 
     threshold = float(results["significance_threshold"])
@@ -1786,13 +2037,14 @@ def analyze_residuals(
         if whitened:
             print("  (Mahalanobis-whitened residuals)")
 
-    for lag in range(1, max_lag + 1):
+    for lag in range(1, lag_cap + 1):
         if lag >= n or (n - lag) < 2:
             continue
         r = _residual_autocorrelation_at_lag(analysis_vec, lag)
         if not np.isfinite(r):
             continue
-        significant = bool(abs(r) > threshold)
+        # High |r| at lag ≈ n-2 on tiny n is an edge artifact, not a detection.
+        significant = bool(abs(r) > threshold) and (n - lag) >= 3
         autocorr[lag] = {
             "r": float(r),
             "significant": significant,
@@ -1823,7 +2075,7 @@ def analyze_residuals(
     want_plots = make_plots or save_plots or show_plots
     if want_plots:
         acf_values = [1.0]
-        for lag in range(1, max_lag + 1):
+        for lag in range(1, lag_cap + 1):
             if lag < n and (n - lag) >= 2:
                 r_lag = _residual_autocorrelation_at_lag(analysis_vec, lag)
                 acf_values.append(float(r_lag) if np.isfinite(r_lag) else 0.0)
@@ -1860,8 +2112,10 @@ def analyze_residuals(
         print("\n[4] Durbin-Watson Statistic")
         print(f"  Durbin-Watson = {dw_stat:.4f}")
         print(f"  → {dw_interp}")
+        if n < 12:
+            print("  (DW on n<12 is not a serial-correlation detection by itself)")
 
-    lb_result = _ljung_box_test(analysis_vec, max_lag)
+    lb_result = _ljung_box_test(analysis_vec, lag_cap)
     results["ljung_box"] = lb_result
 
     if print_summary:
@@ -1885,10 +2139,20 @@ def analyze_residuals(
 
     bg_result = breusch_godfrey_test(
         analysis_vec,
-        lags=breusch_godfrey_lags,
+        lags=bg_lags,
         print_summary=print_summary,
     )
     results["breusch_godfrey"] = bg_result
+    lb_null = True
+    if isinstance(lb_result, dict):
+        lb_null = int(lb_result.get("significant_lag_count") or 0) == 0
+    bg_null = True
+    if isinstance(bg_result, dict):
+        bg_null = not bool(bg_result.get("significant_at_5pct", False))
+    results["lb_bg_null"] = bool(lb_null and bg_null)
+    results["dw_actionable"] = bool(
+        n >= 12 and not (lb_null and bg_null)
+    )
 
     if show_plots and want_plots:
         show_residual_diagnostic_plots(results, block=show_plots_block)
@@ -1950,6 +2214,9 @@ def run_full_residual_diagnostics(
     include_binding_kit: bool = False,
     z: np.ndarray | None = None,
     n_hier: float | None = None,
+    periodicity_detection: bool | None = None,
+    p_values_trusted: bool = True,
+    cycles_possible: float = 0.0,
 ) -> dict[str, Any]:
     """
     Master residual + TSB diagnostics: tests, summary stats, plots, and sound horizon.
@@ -2058,23 +2325,8 @@ def run_full_residual_diagnostics(
 
     from menus.astronomical.desi.stats import search_higher_harmonics
 
-    if verbose:
-        print("\n[Higher harmonics — 1/7 ladder]")
-    higher_harmonics = search_higher_harmonics(
-        residuals,
-        np.asarray(s, dtype=float),
-        fundamental_freq=1.0 / 7.0,
-        max_harmonic=5,
-        n_bootstrap=2000,
-        verbose=verbose,
-    )
-    results["higher_harmonics"] = higher_harmonics
-
     if include_binding_kit:
-        from menus.astronomical.desi.harmonic_binding import (
-            run_harmonic_binding_kit,
-            search_harmonic_features,
-        )
+        from menus.astronomical.desi.harmonic_binding import run_harmonic_binding_kit
         from menus.astronomical.desi.scanner import N_HIER_BINDING
 
         z_arr = np.asarray(z, dtype=float) if z is not None else None
@@ -2084,12 +2336,6 @@ def run_full_residual_diagnostics(
             obs_proxy = np.asarray(y_model, dtype=float) + residuals
         else:
             obs_proxy = np.asarray(y_obs, dtype=float)
-        features = search_harmonic_features(
-            residuals,
-            np.asarray(s, dtype=float),
-            z=z_arr,
-            verbose=verbose,
-        )
         kit = run_harmonic_binding_kit(
             z_arr,
             obs_proxy,
@@ -2098,9 +2344,22 @@ def run_full_residual_diagnostics(
             n_hier=float(n_hier if n_hier is not None else N_HIER_BINDING),
             gamma=gamma_used,
             verbose=verbose,
+            periodicity_detection=periodicity_detection,
+            p_values_trusted=p_values_trusted,
         )
-        kit["harmonic_features"] = features
         results["harmonic_binding_kit"] = kit
+        results["higher_harmonics"] = (kit.get("harmonic_features") or {}).get("ladder")
+    else:
+        if verbose:
+            print("\n[Higher harmonics — 1/7 ladder]")
+        results["higher_harmonics"] = search_higher_harmonics(
+            residuals,
+            np.asarray(s, dtype=float),
+            fundamental_freq=1.0 / 7.0,
+            max_harmonic=5,
+            n_bootstrap=2000,
+            verbose=verbose,
+        )
 
     if include_percolation:
         from menus.astronomical.desi.stats import estimate_tsb_percolation
@@ -2146,6 +2405,10 @@ def run_full_residual_diagnostics(
             n_bootstrap=2000,
             gamma=gamma_used,
             verbose=verbose,
+            n_used=int(len(residuals)),
+            cycles=float(cycles_possible),
+            periodicity_detection=bool(periodicity_detection),
+            p_values_trusted=bool(p_values_trusted),
         )
         whim_results["parameters"] = whim_parameters
         results["whim_web"] = whim_results
@@ -2238,6 +2501,9 @@ def run_master_diagnostics(
     include_binding_kit: bool = True,
     z: np.ndarray | None = None,
     n_hier: float | None = None,
+    periodicity_detection: bool | None = None,
+    p_values_trusted: bool = True,
+    cycles_possible: float = 0.0,
 ) -> dict[str, Any]:
     """
     Master diagnostic function — one call for residual tests, TSB sound horizon,
@@ -2269,4 +2535,7 @@ def run_master_diagnostics(
         include_binding_kit=include_binding_kit,
         z=z,
         n_hier=n_hier,
+        periodicity_detection=periodicity_detection,
+        p_values_trusted=p_values_trusted,
+        cycles_possible=cycles_possible,
     )

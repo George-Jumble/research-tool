@@ -73,18 +73,18 @@ def data_pull_entry_fields(source: str) -> list[dict]:
 
 def fetch_and_graph(repo: str, query: str, params: dict[str, Any] | None = None) -> None:
     params = inject_data_manager(params or {})
-    print(f"\n[TAV ENGINE] Initiating fetch for: {query} in {repo}...")
+    print(f"\n[Superblock Residual Engine] Initiating fetch for: {query} in {repo}...")
     if params:
         display_params = {
             key: val
             for key, val in params.items()
             if key not in {DATA_MANAGER_PARAM_KEY, DATA_MANAGER_LEGACY_PARAM_KEY}
         }
-        print(f"[TAV ENGINE] Entry parameters: {display_params}")
+        print(f"[Superblock Residual Engine] Entry parameters: {display_params}")
 
     batch_file = (params.get("batch_file") or "").strip()
     if batch_file and os.path.isfile(batch_file) and is_batch_list_file(batch_file):
-        print(f"[TAV ENGINE] Batch mode via entry form: {batch_file}")
+        print(f"[Superblock Residual Engine] Batch mode via entry form: {batch_file}")
         for batch_query in iter_resumable_batch_lines(batch_file, params):
             fetch_and_graph(
                 repo,
@@ -97,7 +97,7 @@ def fetch_and_graph(repo: str, query: str, params: dict[str, Any] | None = None)
 
     module = _handler_for(repo)
     if module is None:
-        print(f"[TAV ENGINE] Domain {repo} not wired.")
+        print(f"[Superblock Residual Engine] Domain {repo} not wired.")
         return
 
     fetch_fn: Callable[[str, dict[str, Any] | None], None] = module.fetch_and_graph

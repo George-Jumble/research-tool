@@ -119,11 +119,11 @@ def run_action(
     options = options or {}
     action = _ACTION_KEYS.get(selection)
     if action is None:
-        print(f"[TAV ENGINE] Unknown Remote AI action: {selection}")
+        print(f"[Superblock Residual Engine] Unknown Remote AI action: {selection}")
         return None
 
     load_api_keys()
-    print(f"\n[TAV ENGINE] Remote AI Processing — {selection}")
+    print(f"\n[Superblock Residual Engine] Remote AI Processing — {selection}")
 
     if action == "test_connections":
         providers = parse_provider_list(options)
@@ -132,7 +132,7 @@ def run_action(
 
         out = artifact_path(TestSlug.REMOTE_AI, "connection_test", "report", "json")
         out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-        print(f"[TAV ENGINE] Connection test saved: {out}")
+        print(f"[Superblock Residual Engine] Connection test saved: {out}")
         return str(out)
 
     if action == "provider_status":
@@ -194,7 +194,7 @@ def run_action(
         for row in results:
             if row.analysis:
                 print(f"\n--- {row.provider.upper()} ---\n{row.analysis[:2000]}")
-        print(f"[TAV ENGINE] Custom prompt results: {out}")
+        print(f"[Superblock Residual Engine] Custom prompt results: {out}")
         return str(out)
 
     return None

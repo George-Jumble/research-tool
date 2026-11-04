@@ -52,7 +52,7 @@ MEANINGFUL_N_ACTIONS: dict[str, frozenset[str]] = {
 _N_POINTS_HINTS: dict[str, dict[str, str]] = {
     "tau_sb_desi_extension": {
         "Injection/Recovery Tests": "Monte Carlo injection trials per amplitude (not BAO count)",
-        "Periodicity Scan (1/7 Tracks)": "Lomb–Scargle frequency grid size",
+        "Periodicity Scan (1/7 Tracks)": "Enable DESI+legacy high-power DH stack (n≈9) when n≥8; also Lomb grid",
         "Joint DESI+SN+Planck Fit": "Max Pantheon+ supernovae in joint fit",
         "Full Production Pipeline": "Periodogram grid + injection trials + SN subsample (BAO n fixed)",
         "Real DESI DR2 Scan (Cobaya)": "Batch tracer limit + Lomb–Scargle grid (BAO n per tracer fixed)",
@@ -116,7 +116,7 @@ def desi_n_knobs(action: str, n: int) -> dict[str, int]:
     if action == "Injection/Recovery Tests":
         return {"n_injection_trials": n}
     if action == "Periodicity Scan (1/7 Tracks)":
-        return {"n_freq": n}
+        return {"n_freq": min(n, 2000)}
     if action == "Joint DESI+SN+Planck Fit":
         return {"max_sne": n}
     if action == "Full Production Pipeline":
@@ -139,6 +139,11 @@ def desi_n_usage_message(action: str, n: int) -> str:
     if not knobs:
         return f"n={n} (no wired parameters for {action})"
     parts = ", ".join(f"{k}={v}" for k, v in knobs.items())
+    if action == "Periodicity Scan (1/7 Tracks)" and n >= 8:
+        return (
+            f"n={n} → DESI+legacy high-power stack (DH_only/DM_only, n≈13–16) "
+            f"+ {parts}"
+        )
     return f"n={n} → {parts} (DESI BAO vector length unchanged)"
 
 

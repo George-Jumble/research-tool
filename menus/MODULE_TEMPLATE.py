@@ -105,5 +105,5 @@ def run_action(
     """Execute the selected menu action."""
     _ = show_plots
     options = options or {}
-    print(f"[TAV ENGINE] {SUBMENU_TITLE} — {selection}")
-    print(f"[TAV ENGINE] options={options}")
+    print(f"[Superblock Residual Engine] {SUBMENU_TITLE} — {selection}")
+    print(f"[Superblock Residual Engine] options={options}")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tau-Superblock Research Engine — thin entry point.
+Superblock Research Tool — thin entry point.
 
 Each submenu lives in its own ``*_extension.py`` module.  Shared curses UI,
 menu tree, and run orchestration live under ``tav_research/``.
@@ -14,36 +14,97 @@ Post-run review: set **AI verbose review = yes** on any module entry form.
 
 from __future__ import annotations
 
-# =============================================================================
-# BLOCK: Backward-compatible re-exports (mock_generator, desi_dashboard, …)
-# =============================================================================
+# tav_research is not imported at module load. The curses UI imports it only
+# when this file is executed with no engine subcommand.
 
-from tav_research.curses_shell import (  # noqa: F401
-    ROOT_TITLE,
-    ChunkedScanProgress,
-    _safe_addstr,
-    append_nav,
-    draw_menu,
-    draw_progress_bar,
-    select_n_interactive,
-    show_entry_form,
-)
-from tav_research.n_selector import should_offer_n_selector  # noqa: F401
-from tav_research.registry import (  # noqa: F401
-    MODULE_EXTENSIONS,
-    module_entry_fields,
-    module_entry_instructions,
+_ENGINE_COMMANDS = (
+    "geometry",
+    "sparc",
+    "desi",
+    "cms",
+    "casimir",
+    "bounce",
+    "corpus",
+    "neutron",
 )
 
-# =============================================================================
-# BLOCK: Main
-# =============================================================================
 
-from tav_research.runner import load_api_keys, main
-from tav_shared.tav_resonance_bootstrap import bootstrap_tav_resonance
+def __getattr__(name: str):
+    """Lazy curses re-exports. Importing this module does not load tav_research."""
+    from tav_research import curses_shell, n_selector, registry
 
-load_api_keys()
-bootstrap_tav_resonance(quiet=True)
+    table = {
+        "ROOT_TITLE": curses_shell.ROOT_TITLE,
+        "ChunkedScanProgress": curses_shell.ChunkedScanProgress,
+        "_safe_addstr": curses_shell._safe_addstr,
+        "append_nav": curses_shell.append_nav,
+        "draw_menu": curses_shell.draw_menu,
+        "draw_progress_bar": curses_shell.draw_progress_bar,
+        "select_n_interactive": curses_shell.select_n_interactive,
+        "show_entry_form": curses_shell.show_entry_form,
+        "should_offer_n_selector": n_selector.should_offer_n_selector,
+        "MODULE_EXTENSIONS": registry.MODULE_EXTENSIONS,
+        "module_entry_fields": registry.module_entry_fields,
+        "module_entry_instructions": registry.module_entry_instructions,
+    }
+    if name in table:
+        return table[name]
+    raise AttributeError(name)
+
+
+def _missing_engine(command: str) -> int:
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent
+    constants = root / "sb_engine" / "constants.py"
+    if command == "geometry" and constants.is_file():
+        from sb_engine.constants import (
+            CORPUS_DATE,
+            DELTA_TEP_MEV,
+            HBAR_C_MEV_FM,
+            R_M_LOCKED_FM,
+            R_M_LOCKED_M,
+        )
+
+        print(f"[Superblock Residual Engine] CORPUS_DATE={CORPUS_DATE}")
+        print(f"[Superblock Residual Engine] DELTA_TEP_MEV={DELTA_TEP_MEV}")
+        print(f"[Superblock Residual Engine] r_M = hbar*c/DELTA_TEP = {R_M_LOCKED_FM} fm")
+        print(f"[Superblock Residual Engine] R_M_LOCKED_M={R_M_LOCKED_M}")
+        print(f"[Superblock Residual Engine] HBAR_C_MEV_FM={HBAR_C_MEV_FM}")
+        return 0
+    searched = [
+        constants,
+        root / "sb_engine" / f"{command}.py",
+        root / f"{command}.py",
+    ]
+    print(f"[Superblock Residual Engine] `{command}` is not in this tree.")
+    for path in searched:
+        print(f"  searched {path} exists={path.is_file()}")
+    return 0
+
 
 if __name__ == "__main__":
+    import sys
+
+    argv = sys.argv[1:]
+    if argv and argv[0] in _ENGINE_COMMANDS:
+        raise SystemExit(_missing_engine(argv[0]))
+    if "--lock-blind" in argv:
+        from menus.particle.casimir.blind_mode import lock_blind_results
+
+        lock_blind_results()
+        raise SystemExit(0)
+    if "--compare-blind" in argv:
+        from menus.particle.casimir.blind_mode import write_blind_comparison_table
+
+        write_blind_comparison_table()
+        raise SystemExit(0)
+    if "--blind" in argv:
+        from menus.particle.casimir.blind_mode import set_blind
+
+        set_blind(True)
+        sys.argv = [sys.argv[0]] + [a for a in argv if a != "--blind"]
+    from tav_research.runner import load_api_keys, main
+
+    load_api_keys()
     main()

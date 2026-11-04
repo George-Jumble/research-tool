@@ -14,9 +14,9 @@ def finalize_batch(batch_filename="batch_data.txt", ignore_filename="ignore.txt"
             
         # Reset batch_data.txt
         open(batch_filename, 'w').close()
-        print(f"\n[TAV ENGINE] Batch '{batch_filename}' archived to '{ignore_filename}'.")
+        print(f"\n[Superblock Residual Engine] Batch '{batch_filename}' archived to '{ignore_filename}'.")
     else:
-        print(f"\n[TAV ENGINE] No active batch data found in '{batch_filename}' to archive.")
+        print(f"\n[Superblock Residual Engine] No active batch data found in '{batch_filename}' to archive.")
 
 if __name__ == "__main__":
     finalize_batch()

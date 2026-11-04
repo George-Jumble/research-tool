@@ -40,12 +40,14 @@ from menus.astronomical.desi.scanner import (
     N_HIER_BINDING,
     RD_OBSERVED_ERR_MPC,
     RD_OBSERVED_MPC,
+    TAV_RESONANCE_MIN_N,
     DesiScanResult,
     TauSBScanner,
     data_mode_to_quantity_filter,
     mcmc_burn_in_for_steps,
     gaussian_chi2,
     list_desi_tracers,
+    load_desi_from_cobaya_repo,
     run_desi_scan,
     s_from_z,
     tau_sb_hierarchical_step,
@@ -723,11 +725,34 @@ def run_batch_tracer_scan(
             if q_filter not in avail_q:
                 q_filter = avail_q[0] if len(avail_q) == 1 else None
         try:
+            preview = load_desi_from_cobaya_repo(
+                cobaya_path,
+                tracer=tracer,
+                quantity_filter=q_filter,
+            )
+            n_prev = int(preview.get("n_data", 0))
+        except (FileNotFoundError, ValueError) as exc:
+            summaries[tracer] = {"error": str(exc), "skipped": True}
+            continue
+        if n_prev < 3:
+            summaries[tracer] = {
+                "skipped": True,
+                "n_data": n_prev,
+                "reason": (
+                    f"n={n_prev} unusable for periodogram / Tav "
+                    "(per-tracer DH_only splits are single points; keep ALL_GCcomb or the n≥8 stack)"
+                ),
+            }
+            print(f"[Tau-SB DESI] Skip {tracer}: n={n_prev} (need n≥3, Tav n≥{TAV_RESONANCE_MIN_N})")
+            continue
+        try:
             result = run_desi_scan(
                 cobaya_path=cobaya_path,
                 tracer=tracer,
                 quantity_filter=q_filter,
-                auto_calibrate_gamma=auto_calibrate_gamma,
+                auto_calibrate_gamma=bool(
+                    auto_calibrate_gamma and n_prev >= TAV_RESONANCE_MIN_N
+                ),
                 compare_models=compare_models,
                 use_covariance=use_covariance,
                 run_fit=True,
@@ -818,11 +843,23 @@ def _channel_result_digest(result: DesiScanResult) -> dict[str, Any]:
         ),
         "periodicity": (
             {
+                "f_expected": per.get("f_expected", per.get("expected_f")),
                 "power_at_expected": per.get("power_at_expected"),
-                "max_power": per.get("max_power"),
-                "pval_bootstrap": per.get("pval_bootstrap", per.get("pval_approx")),
-                "lomb_detected": bool(th.get("lomb_detected", False)),
+                "f_max": per.get("f_max", per.get("max_freq")),
+                "power_max": per.get("power_max", per.get("max_power")),
+                "power_ratio": per.get("power_ratio"),
+                "p_boot": per.get("p_boot", per.get("pval_bootstrap", per.get("pval_approx"))),
+                "n_raw": per.get("n_raw"),
+                "n_deduped": per.get("n_deduped"),
+                "cycles": per.get("cycles"),
+                "gamma_source": per.get("gamma_source"),
+                "lomb_peak_1_7": bool(per.get("lomb_peak_1_7", False)),
                 "tav_resonance_detected": bool(th.get("tav_resonance_detected", False)),
+                "harmonic_peaks": list(th.get("harmonic_peaks") or per.get("harmonic_peaks") or []),
+                "detection": bool(per.get("detection", False)),
+                "lomb_detected": bool(per.get("lomb_peak_1_7", th.get("lomb_detected", False))),
+                "max_power": per.get("power_max", per.get("max_power")),
+                "pval_bootstrap": per.get("p_boot", per.get("pval_bootstrap", per.get("pval_approx"))),
             }
             if per
             else None

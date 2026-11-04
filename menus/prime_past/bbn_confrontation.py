@@ -239,7 +239,7 @@ def plot_scan_summary(
     if show:
         plt.show()
     plt.close(fig)
-    print(f"[TAV ENGINE] Scan plot saved: {output_path}")
+    print(f"[Superblock Residual Engine] Scan plot saved: {output_path}")
     return str(output_path)
 
 
@@ -354,11 +354,11 @@ def save_scan_report(
         payload["empirical_provenance"] = empirical_provenance
     text = json.dumps(payload, indent=2, default=float) + "\n"
     path.write_text(text, encoding="utf-8")
-    print(f"[TAV ENGINE] Results saved to {path}")
+    print(f"[Superblock Residual Engine] Results saved to {path}")
 
     if also_cwd:
         cwd_path = Path("tav_bbn_scan_results.json")
         cwd_path.write_text(text, encoding="utf-8")
-        print(f"[TAV ENGINE] Results saved to {cwd_path.resolve()}")
+        print(f"[Superblock Residual Engine] Results saved to {cwd_path.resolve()}")
 
     return str(path)

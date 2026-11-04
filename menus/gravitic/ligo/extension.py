@@ -83,6 +83,11 @@ def entry_instructions(action: str) -> list[str]:
 
 
 def run_action(action: str, options: dict[str, Any] | None = None) -> None:
+    from superblock_mode import CONTINUE, begin_live_action
+
+    routed = begin_live_action(MODULE_TAG, action, options)
+    if routed is not CONTINUE:
+        return None
     options = options or {}
     if action == "Pull Strain from GWOSC":
         query = str(options.get("query", "")).strip()

@@ -85,7 +85,7 @@ def ensure_empirical_targets(
     target_ids = [f"empirical:{k}" for k in keys]
     if verbose:
         print(
-            f"[TAV ENGINE] Auto-fetch empirical targets for {module_tag} / {action}: "
+            f"[Superblock Residual Engine] Auto-fetch empirical targets for {module_tag} / {action}: "
             f"{', '.join(keys)}"
         )
     result = fetch_selected("EMPIRICAL_TESTS", target_ids, options)
@@ -104,5 +104,5 @@ def ensure_empirical_targets(
     }
     options["_empirical_provenance"] = provenance
     if verbose and result.fetched:
-        print(f"[TAV ENGINE] Empirical materialized: {', '.join(result.fetched)}")
+        print(f"[Superblock Residual Engine] Empirical materialized: {', '.join(result.fetched)}")
     return provenance

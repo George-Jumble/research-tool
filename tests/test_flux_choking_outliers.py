@@ -1,5 +1,12 @@
 import unittest
 
+import pytest
+
+pytest.skip(
+    "retired 2026-09-22: TauSuperblockSolver is not the live SPARC kernel",
+    allow_module_level=True,
+)
+
 import numpy as np
 import pandas as pd
 

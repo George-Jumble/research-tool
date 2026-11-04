@@ -393,7 +393,7 @@ def archive_used_datasets(paths: Iterable[Path | str]) -> List[Path]:
         try:
             src.relative_to(DATASETS_DIR.resolve())
         except ValueError:
-            print(f"[TAV ENGINE] Leaving in place (not under datasets/sparc/): {src}")
+            print(f"[Superblock Residual Engine] Leaving in place (not under datasets/sparc/): {src}")
             continue
 
         dest = move_to_finished_archive(
@@ -402,10 +402,10 @@ def archive_used_datasets(paths: Iterable[Path | str]) -> List[Path]:
             also_search=(LEGACY_FINISHED_A_DIR,),
         )
         moved.append(dest)
-        print(f"[TAV ENGINE] Archived SPARC CSV: {src.name} -> {dest}")
+        print(f"[Superblock Residual Engine] Archived SPARC CSV: {src.name} -> {dest}")
 
     if moved:
-        print(f"[TAV ENGINE] {len(moved)} SPARC file(s) moved to {FINISHED_A_DIR}/")
+        print(f"[Superblock Residual Engine] {len(moved)} SPARC file(s) moved to {FINISHED_A_DIR}/")
     return moved
 
 

@@ -262,19 +262,26 @@ def run_action(
     options: dict | None = None,
 ) -> str | None:
     """Execute a Prime Past Harmonic module action from the research tool menu."""
+    from superblock_mode import CONTINUE, begin_live_action
+
+    routed = begin_live_action(MODULE_TAG, selection, options)
+    if routed is not CONTINUE:
+        if isinstance(routed, dict):
+            return routed.get("report_path")
+        return routed
     if options is None:
         options = {}
     action = _ACTION_KEYS.get(selection)
     if action is None:
-        print(f"[TAV ENGINE] Unknown Prime Past action: {selection}")
+        print(f"[Superblock Residual Engine] Unknown Prime Past action: {selection}")
         return None
 
     ensure_artifacts_dir()
     fw = TavSuperblockPrimePastHarmonic()
 
-    print(f"\n[TAV ENGINE] Prime Past Harmonic module — {selection}")
-    print(f"[TAV ENGINE] Topological anchor m₀ = {M0_MEV} MeV")
-    print(f"[TAV ENGINE] Artifacts directory: {ARTIFACTS_DIR}")
+    print(f"\n[Superblock Residual Engine] Prime Past Harmonic module — {selection}")
+    print(f"[Superblock Residual Engine] Topological anchor m₀ = {M0_MEV} MeV")
+    print(f"[Superblock Residual Engine] Artifacts directory: {ARTIFACTS_DIR}")
 
     if action == "bbn_interference":
         from menus.prime_past.bbn_interference import (
@@ -379,18 +386,18 @@ def run_action(
 
     if action == "latex":
         tex_path = fw.write_latex_proof_appendix()
-        print(f"[TAV ENGINE] LaTeX appendix written: {tex_path}")
+        print(f"[Superblock Residual Engine] LaTeX appendix written: {tex_path}")
         return str(tex_path)
 
     if action == "monte_carlo":
         mc_samples = int(options.get("mc_samples") or 3000)
         mc = fw.monte_carlo_domain_scan(n_samples=mc_samples)
         print(
-            f"[TAV ENGINE] Monte-Carlo light-stable fraction: "
+            f"[Superblock Residual Engine] Monte-Carlo light-stable fraction: "
             f"{mc['light_stable_fraction'] * 100:.2f}%"
         )
-        print(f"[TAV ENGINE] Mean m_eff (past sample): {mc['mean_m_eff_past']:.2f} MeV")
-        print(f"[TAV ENGINE] Note: {mc['note']}")
+        print(f"[Superblock Residual Engine] Mean m_eff (past sample): {mc['mean_m_eff_past']:.2f} MeV")
+        print(f"[Superblock Residual Engine] Note: {mc['note']}")
         return None
 
     if action == "full_demo":
@@ -400,7 +407,7 @@ def run_action(
         paths = _generate_visualizations(fw, show_plots=show_plots)
         tex_path = fw.write_latex_proof_appendix()
         mc = fw.monte_carlo_domain_scan(n_samples=mc_samples)
-        print("\n[TAV ENGINE] Full demo outputs:")
+        print("\n[Superblock Residual Engine] Full demo outputs:")
         for label, path in paths.items():
             print(f"  {label}: {path}")
         print(f"  LaTeX appendix: {tex_path}")
@@ -431,7 +438,7 @@ def _generate_visualizations(
     fw: TavSuperblockPrimePastHarmonic,
     show_plots: bool = True,
 ) -> Dict[str, str]:
-    print("[TAV ENGINE] Generating Prime Past visualizations...")
+    print("[Superblock Residual Engine] Generating Prime Past visualizations...")
     paths = {
         "Phase clock": fw.plot_8phase_clock(),
         "Domain properties": fw.plot_domain_properties(),

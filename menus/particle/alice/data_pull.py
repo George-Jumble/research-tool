@@ -42,7 +42,7 @@ def load_alice_o2_root(path: str, entry_stop: int = 50000) -> tuple[pd.DataFrame
                 f"available keys include: {', '.join(list(file.keys())[:8])}..."
             )
         track_key = track_keys[0]
-        print(f"[TAV ENGINE] Using tree: {track_key}")
+        print(f"[Superblock Residual Engine] Using tree: {track_key}")
         tree = file[track_key]
         data = tree.arrays(["fSigned1Pt", "fTgl"], library="np", entry_stop=entry_stop)
         signed_1pt = data["fSigned1Pt"]
@@ -69,7 +69,7 @@ def fetch_and_graph(query: str, params: dict[str, Any] | None = None) -> None:
     if key == "alice_esd_sample" and not q.endswith(".root"):
         if resolve_root_path(key) is None:
             force = str(params.get("force_refresh", "no")).lower() in {"yes", "y", "true", "1"}
-            print(f"[TAV ENGINE] Auto-fetching CERN target: {key}")
+            print(f"[Superblock Residual Engine] Auto-fetching CERN target: {key}")
             ensure_cern_target(key, force_refresh=force, auto_fetch=True)
         root = resolve_root_path(key)
         if root is not None:
@@ -80,8 +80,8 @@ def fetch_and_graph(query: str, params: dict[str, Any] | None = None) -> None:
             entry_stop = int(params.get("root_entry_limit") or 50000)
         except ValueError:
             entry_stop = 50000
-        print(f"[TAV ENGINE] Piercing local ROOT substrate: {query}")
+        print(f"[Superblock Residual Engine] Piercing local ROOT substrate: {query}")
         df, track_key = load_alice_o2_root(query, entry_stop=entry_stop)
-        print(f"[TAV ENGINE] Loaded {len(df)} tracks from {track_key}")
+        print(f"[Superblock Residual Engine] Loaded {len(df)} tracks from {track_key}")
         return
     hepdata_fetch(query, params)

@@ -18,6 +18,7 @@ from tav_shared.ingestion import inject_data_manager
 from tav_research.data_pull import fetch_and_graph, is_batch_list_file, _iter_resumable_batch_lines
 from tav_research.dataset_manager import DATASET_MANAGER_TAG, run_dataset_manager_action
 from tav_research.curses_shell import restore_terminal
+from superblock_mode import RetiredModuleError
 from tav_research.main_loop import main_curses
 from tav_research.registry import MODULE_EXTENSIONS, PLANCK_IMPORT_ERROR, planck_cmb_extension
 
@@ -28,10 +29,9 @@ matplotlib.use("TkAgg")
 def load_api_keys() -> None:
     """Populate LLM API key env vars from config/api_keys.env or .env."""
     from tav_shared.remote_ai.load_keys import load_api_keys as _load_remote_keys
-    from tav_shared.tav_resonance_bootstrap import bootstrap_tav_resonance
 
     _load_remote_keys()
-    bootstrap_tav_resonance(quiet=True)
+    # Tav-resonance bootstrap is retired on the Superblock-only path.
 
 
 def _inject_gateway_live_models(params: dict) -> dict:
@@ -80,6 +80,15 @@ def _run_with_optional_llm_review(
     )
 
 
+def _pause_before_menu() -> None:
+    """Let the user read terminal run output before curses redraws the menu."""
+    try:
+        print("\n[Superblock Residual Engine] Press Enter to return to the menu (or Ctrl+C to exit)…")
+        input()
+    except (EOFError, KeyboardInterrupt):
+        raise SystemExit(0) from None
+
+
 def main() -> None:
     load_api_keys()
     try:
@@ -101,20 +110,25 @@ def main() -> None:
                 prepared, log_options = _prepare_module_run(repo, query, params)
                 ext = MODULE_EXTENSIONS[repo]
                 ensure_datasets_before_run(repo, query, prepared)
-                _run_with_optional_llm_review(
-                    repo,
-                    query,
-                    prepared,
-                    lambda: ext.run_action(query, options=prepared),
-                    log_options=log_options,
-                )
-            elif repo == "Planck CMB Tav-Scan" and planck_cmb_extension is None:
-                print("\n[TAV ENGINE] Planck CMB module unavailable.")
+                try:
+                    _run_with_optional_llm_review(
+                        repo,
+                        query,
+                        prepared,
+                        lambda: ext.run_action(query, options=prepared),
+                        log_options=log_options,
+                    )
+                except RetiredModuleError as exc:
+                    print(f"\n[Superblock Residual Engine] {exc}")
+                except KeyboardInterrupt:
+                    print("\n[Superblock Residual Engine] Interrupted — returning to the menu.")
+            elif repo == "Planck CMB Residuals" and planck_cmb_extension is None:
+                print("\n[Superblock Residual Engine] Planck CMB module unavailable.")
                 if PLANCK_IMPORT_ERROR is not None:
                     print(f"[ERROR] Import failed: {PLANCK_IMPORT_ERROR}")
-                print("[TAV ENGINE] Install healpy in the project venv:")
+                print("[Superblock Residual Engine] Install healpy in the project venv:")
                 print("  ./venv/bin/pip install healpy")
-                print("[TAV ENGINE] Then run: ./venv/bin/python research_tool.py")
+                print("[Superblock Residual Engine] Then run: ./venv/bin/python research_tool.py")
             elif repo and query:
                 if os.path.isfile(query) and is_batch_list_file(query):
                     for b_query in _iter_resumable_batch_lines(query, params):
@@ -135,8 +149,12 @@ def main() -> None:
                         lambda: fetch_and_graph(repo, query, params),
                     )
             else:
-                print("\n[TAV ENGINE] Extraction aborted.")
-            break
+                print("\n[Superblock Residual Engine] Extraction aborted.")
+
+            # Return to the Primary Matrix after each module/data-pull run.
+            _pause_before_menu()
+    except KeyboardInterrupt:
+        print("\n[Superblock Residual Engine] Interrupted.")
     except Exception as exc:
         detail = str(exc).strip()
         label = type(exc).__name__

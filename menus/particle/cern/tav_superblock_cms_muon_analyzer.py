@@ -187,7 +187,11 @@ def _periodogram_7fold(series: np.ndarray) -> dict[str, Any]:
     sub_power = float(power[sub_idx]) if sub_idx < power.size else 0.0
     sub_excess = (sub_power / baseline) if baseline > 0 else 0.0
 
-    detected = len(hits) >= 2 or sub_excess >= 2.5
+    from tav_shared.bound_unbound_energy import partition_periodogram_totals
+
+    f_bound = float(TAV_HARMONIC_RATIO) if freqs.size else (1.0 / 7.0)
+    energy_split = partition_periodogram_totals(freqs, power, f_bound=f_bound)
+    detected = bool(energy_split["bound_flag_clean"] and (len(hits) >= 2 or sub_excess >= 2.5))
     verdict = (
         "7-FOLD SIGNATURE"
         if detected and len(hits) >= 2
@@ -204,6 +208,16 @@ def _periodogram_7fold(series: np.ndarray) -> dict[str, Any]:
             "detected": bool(detected),
             "harmonic_hits": hits,
             "subharmonic_excess": sub_excess,
+            "E_bound_clean": energy_split["E_bound_clean"],
+            "E_unbound_clean": energy_split["E_unbound_clean"],
+            "bound_flag_clean": energy_split["bound_flag_clean"],
+            "f_b": energy_split["f_b"],
+            "f_u": energy_split["f_u"],
+            "energy_ledger": "content",
+            "note_energy": (
+                "subharmonic_excess uses peak/median (E_tot-like). Bound residue is "
+                "E_bound_clean only; continuum under 7-fold peaks is E_unbound_clean."
+            ),
             "verdict": verdict,
             "peak_indices": [int(i) for i in peak_idx],
             **ds_meta,

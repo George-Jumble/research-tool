@@ -1,0 +1,9 @@
+{
+  "mode": "superblock_mirron_3p1d",
+  "superblock_only": true,
+  "tau_5d_templates": false,
+  "comparison_models": ["LCDM", "GR", "SM", "Newtonian_SPARC"],
+  "alternative_under_test": "Superblock/Mirron",
+  "retired": "2026-09-21",
+  "note": "Tau/Tav/KK/5D/142857 templates are not evaluated. tau_5d_templates is forced false at boot."
+}

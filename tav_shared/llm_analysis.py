@@ -827,17 +827,17 @@ def analyze_run_output(
     providers = parse_provider_list(options)
     gateway_live = load_gateway_live_models(options)
 
-    print(f"\n[TAV ENGINE] LLM verbose analysis — {module_tag} / {action}")
+    print(f"\n[Superblock Residual Engine] LLM verbose analysis — {module_tag} / {action}")
     if gateway_live:
         labels = gateway_live_model_labels(gateway_live)
         print(
-            f"[TAV ENGINE] Gateway live models ({len(labels)}): "
+            f"[Superblock Residual Engine] Gateway live models ({len(labels)}): "
             + ", ".join(labels)
             + f" | prompt chars: {len(prompt)}"
         )
     else:
         print(
-            f"[TAV ENGINE] Providers: {', '.join(providers)} "
+            f"[Superblock Residual Engine] Providers: {', '.join(providers)} "
             f"| prompt chars: {len(prompt)}"
         )
 
@@ -894,7 +894,7 @@ def analyze_run_output(
     skipped = [r for r in results if r.skipped]
     failed = [r for r in results if r.error]
     print(
-        f"[TAV ENGINE] LLM analysis complete: {len(ok)} ok, "
+        f"[Superblock Residual Engine] LLM analysis complete: {len(ok)} ok, "
         f"{len(skipped)} skipped, {len(failed)} failed"
     )
     for row in results:
@@ -905,8 +905,8 @@ def analyze_run_output(
             print(f"  {row.provider}: skipped ({row.skip_reason})")
         elif row.error:
             print(f"  {row.provider}: error ({row.error[:120]})")
-    print(f"[TAV ENGINE] LLM JSON report: {bundle.report_path}")
-    print(f"[TAV ENGINE] LLM text report: {bundle.text_report_path}")
+    print(f"[Superblock Residual Engine] LLM JSON report: {bundle.report_path}")
+    print(f"[Superblock Residual Engine] LLM text report: {bundle.text_report_path}")
 
     return bundle.to_dict()
 
@@ -933,7 +933,7 @@ def maybe_analyze_with_llms(
             options=options,
         )
     except Exception as exc:
-        print(f"[TAV ENGINE] LLM analysis failed: {exc}")
+        print(f"[Superblock Residual Engine] LLM analysis failed: {exc}")
         return None
 
 

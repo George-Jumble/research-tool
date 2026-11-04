@@ -8,25 +8,25 @@ def fetch_hepdata_record(inspire_id):
     """
     clean_id = str(inspire_id).lower().replace('ins', '')
     api_url = f"https://www.hepdata.net/record/ins{clean_id}?format=json"
-    print(f"\n[TAV ENGINE] Initiating Phase 1: Piercing domain metadata at {api_url}")
+    print(f"\n[Superblock Residual Engine] Initiating Phase 1: Piercing domain metadata at {api_url}")
     
     try:
         response = requests.get(api_url, timeout=15)
         if response.status_code != 200:
-            print(f"[TAV ENGINE ERROR] HTTP Status: {response.status_code}")
+            print(f"[Superblock Residual Engine] ERROR HTTP Status: {response.status_code}")
             return None
             
         record_data = response.json()
         if 'data_tables' not in record_data:
-            print("[TAV ENGINE ERROR] No data_tables index found.")
+            print("[Superblock Residual Engine] ERROR No data_tables index found.")
             return None
             
         tables = record_data['data_tables']
-        print(f"[TAV ENGINE] Phase 1 Complete. Found {len(tables)} table nodes.")
+        print(f"[Superblock Residual Engine] Phase 1 Complete. Found {len(tables)} table nodes.")
         return (clean_id, tables)
         
     except Exception as e:
-        print(f"[TAV ENGINE ERROR] Phase 1 failed: {e}")
+        print(f"[Superblock Residual Engine] ERROR Phase 1 failed: {e}")
         return None
 
 def process_and_filter_table(record_info, table_index=0):
@@ -48,27 +48,27 @@ def process_and_filter_table(record_info, table_index=0):
         
         # 2. Ping the explicit discrete table download endpoint (Targeting Version 1)
         data_url = f"https://www.hepdata.net/download/table/ins{clean_id}/{safe_table_name}/1/json"
-        print(f"[TAV ENGINE] Initiating Phase 2: Extracting macroscopic arrays from {data_url}")
+        print(f"[Superblock Residual Engine] Initiating Phase 2: Extracting macroscopic arrays from {data_url}")
         
         response = requests.get(data_url, timeout=15)
         
         if response.status_code != 200:
-            print(f"[TAV ENGINE ERROR] CERN rejected Phase 2 link. HTTP Status: {response.status_code}")
+            print(f"[Superblock Residual Engine] ERROR CERN rejected Phase 2 link. HTTP Status: {response.status_code}")
             return None
             
         # 3. Safely attempt to parse the payload, catching HTML firewalls
         try:
             table_payload = response.json()
         except Exception:
-            print(f"[TAV ENGINE ERROR] Payload is not JSON. CERN shielded the array with HTML.")
-            print(f"[TAV ENGINE DEBUG] Server response snippet: {response.text[:100]}")
+            print(f"[Superblock Residual Engine] ERROR Payload is not JSON. CERN shielded the array with HTML.")
+            print(f"[Superblock Residual Engine] DEBUG Server response snippet: {response.text[:100]}")
             return None
         
 # 4. Directly map the unshielded arrays to Pandas
-        print(f"[TAV ENGINE] Arrays acquired. Constructing live matrix for {table_name}...")
+        print(f"[Superblock Residual Engine] Arrays acquired. Constructing live matrix for {table_name}...")
         
         if 'values' not in table_payload:
-            print(f"[TAV ENGINE ERROR] 'values' matrix missing. Keys found: {table_payload.keys()}")
+            print(f"[Superblock Residual Engine] ERROR 'values' matrix missing. Keys found: {table_payload.keys()}")
             return None
             
         try:
@@ -95,11 +95,11 @@ def process_and_filter_table(record_info, table_index=0):
             return df
 
         except Exception as e:
-            print(f"[TAV ENGINE ERROR] Matrix flattening failed: {e}")
+            print(f"[Superblock Residual Engine] ERROR Matrix flattening failed: {e}")
             return None
             
         # 5. Map the arrays to Pandas for Tav-Superblock injection
-        print(f"[TAV ENGINE] Arrays acquired. Constructing live matrix for {table_name}...")
+        print(f"[Superblock Residual Engine] Arrays acquired. Constructing live matrix for {table_name}...")
         
         indep_vars = extracted_table.get('independent_variables', [])
         x_raw = indep_vars[0]['values']
@@ -119,7 +119,7 @@ def process_and_filter_table(record_info, table_index=0):
         return df
 
     except Exception as e:
-        print(f"[TAV ENGINE ERROR] Phase 2 mapping failed: {e}")
+        print(f"[Superblock Residual Engine] ERROR Phase 2 mapping failed: {e}")
         return None
         
 # --- Local Testing Block ---
@@ -131,7 +131,7 @@ if __name__ == "__main__":
         tav_dataframe = process_and_filter_table(record_info, table_index=0)
         
         if tav_dataframe is not None:
-            print("\n[TAV ENGINE] Live Data Ready for Cross-Domain Correlation:")
+            print("\n[Superblock Residual Engine] Live Data Ready for Cross-Domain Correlation:")
             print(tav_dataframe.head())
         else:
-            print("\n[TAV ENGINE ERROR] DataFrame construction failed. Aborting matrix injection.")
+            print("\n[Superblock Residual Engine] ERROR DataFrame construction failed. Aborting matrix injection.")

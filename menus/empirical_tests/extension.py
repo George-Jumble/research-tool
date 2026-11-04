@@ -4,7 +4,9 @@ Modular bridge: Superblock Empirical Tests ↔ research_tool.py
 
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 from typing import Dict, List
 
 import matplotlib.pyplot as plt
@@ -19,7 +21,7 @@ MENU_ACTIONS = [
     "Light Quarks Confrontation",
     "Neutron Lifetime Test",
     "Yang-Mills Glueball Test",
-    "BBN Abundance Confrontation",
+    "BBN integrator status",
     "Full Pipeline (Plot + LaTeX)",
 ]
 
@@ -48,7 +50,7 @@ _ACTION_CONFIG: Dict[str, Dict] = {
         "plot": True,
         "latex": False,
     },
-    "BBN Abundance Confrontation": {
+    "BBN integrator status": {
         "tests": ["bbn_standalone"],
         "sources": ["bbn_abundances"],
         "plot": True,
@@ -102,8 +104,8 @@ def entry_instructions(action: str) -> list[str]:
         "Output JSON name: .json file saved under artifacts/ (letters, numbers, _, -).",
         "Plots/LaTeX: .png and .tex written to artifacts/ when pipeline requests them.",
     ]
-    if action == "BBN Abundance Confrontation":
-        base.append("No external download required — runs Prime Past BBN + curated abundances.")
+    if action == "BBN integrator status":
+        base.append("Scorer refused. No abundance comparison is drawn.")
     return base
 
 
@@ -111,20 +113,18 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
     options = options or {}
     config = _ACTION_CONFIG.get(selection)
     if config is None:
-        print(f"[TAV ENGINE] Unknown empirical test action: {selection}")
+        print(f"[Superblock Residual Engine] Unknown empirical test action: {selection}")
         return
 
-    empirical.ensure_output_dirs()
-    print(f"\n[TAV ENGINE] Superblock Empirical Tests — {selection}")
-    print(f"[TAV ENGINE] Theory anchor m₀ = {empirical.M0_MEV} MeV")
-    print(f"[TAV ENGINE] Output directory: {empirical.ARTIFACTS_DIR}")
-
     output_name = (options.get("output_name") or "").strip()
+    dataset = Path(output_name).stem if output_name else selection
+    empirical.begin_artifact_run(dataset)
+    print(f"\n[{empirical.ENGINE_BANNER}] Superblock Empirical Tests — {selection}")
+    print(f"[{empirical.ENGINE_BANNER}] Ledger: {empirical.LEDGER_DATE}")
+    print(f"[{empirical.ENGINE_BANNER}] m0 = {empirical.DELTA_TEP_MEV} MeV frozen")
+    print(f"[{empirical.ENGINE_BANNER}] Output directory: {empirical.ARTIFACTS_DIR}")
+
     output_path = None
-    if output_name:
-        if not output_name.endswith(".json"):
-            output_name += ".json"
-        output_path = str(empirical.ARTIFACTS_DIR / output_name)
 
     selected_raw = (options.get("selected_sources") or "").strip()
     sources = config["sources"]
@@ -132,21 +132,16 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
         picked = [part.strip() for part in selected_raw.split(",") if part.strip()]
         sources = [key for key in picked if key in empirical.REPOS] or sources
 
-    if selection == "BBN Abundance Confrontation":
-        from menus.prime_past.bbn_interference import (
-            confront_empirical_abundances,
-            run_bbn_comparison,
-            save_bbn_report,
-        )
+    if selection == "BBN integrator status":
+        from menus.prime_past.bbn_interference import run_bbn_comparison
 
         comparison = run_bbn_comparison(options, verbose=True)
-        confront_empirical_abundances(
-            comparison,
-            plot=bool(config.get("plot")) and show_plots,
-            verbose=True,
-        )
-        report_path = save_bbn_report(comparison, prefix="bbn_empirical_confrontation")
-        print(f"[TAV ENGINE] BBN confrontation report: {report_path}")
+        comparison["status"] = "FAIL_INTEGRATOR"
+        comparison["ledger"] = "FAIL_INTEGRATOR"
+        comparison.setdefault("reason", "network did not form D / did not finish n->He4")
+        report_path = empirical.run_artifact("bbn_status", "json")
+        report_path.write_text(json.dumps(comparison, indent=2) + "\n", encoding="utf-8")
+        print(f"[Superblock Residual Engine] BBN integrator status: {report_path}")
         return report_path
 
     report = empirical.run_pipeline(
@@ -164,7 +159,7 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
         _show_saved_plots(report)
 
     print(
-        "\n[TOPOLOGICAL ANCHOR] 313.1 MeV mass-gap signal is independent of "
+        f"\n[TOPOLOGICAL ANCHOR] {empirical.DELTA_TEP_MEV} MeV mass-gap signal is independent of "
         "empirical confrontation parameters."
     )
 

@@ -113,7 +113,7 @@ def load_api_keys(*, verbose: bool = False) -> dict[str, str]:
         loaded["OLLAMA_BASE_URL"] = os.environ["OLLAMA_BASE_URL"]
 
     if verbose and loaded:
-        print(f"[TAV ENGINE] Loaded {len(loaded)} API key(s) from config files.")
+        print(f"[Superblock Residual Engine] Loaded {len(loaded)} API key(s) from config files.")
     elif verbose:
-        print("[TAV ENGINE] No API keys loaded from config (using environment only).")
+        print("[Superblock Residual Engine] No API keys loaded from config (using environment only).")
     return loaded

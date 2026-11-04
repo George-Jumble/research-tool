@@ -592,7 +592,7 @@ def _empirical_provider() -> DatasetProvider:
                     result.fetched.append(key)
                 elif empirical.materialize_curated_cache(key, dest):
                     print(
-                        f"[TAV ENGINE] Download failed for {key}; "
+                        f"[Superblock Residual Engine] Download failed for {key}; "
                         "using PDG/literature fallback."
                     )
                     result.fetched.append(key)
@@ -659,7 +659,8 @@ def _empirical_provider() -> DatasetProvider:
 
 
 def _lhcb_provider() -> DatasetProvider:
-    from menus.particle.lhcb.echo import DEFAULT_DATA_PATH, save_default_dataset
+    from menus.particle.lhcb.echo import DEFAULT_DATA_PATH, DEFAULT_N_BINS, clip_n_bins
+    from menus.particle.lhcb.fetcher import download_lhcb_bmeson_dataset
 
     DATASETS_DIR = PROJECT_ROOT / "datasets" / "lhcb"
     DATASETS_DIR.mkdir(parents=True, exist_ok=True)
@@ -683,13 +684,22 @@ def _lhcb_provider() -> DatasetProvider:
     def fetch_targets(target_ids: List[str], options: dict) -> FetchResult:
         result = FetchResult(module_tag="LHCB_TAV_ECHO", fetched=[], skipped=[], failed={})
         force = str(options.get("force_refresh", "no")).lower() in {"yes", "y", "true", "1"}
+        n_bins = clip_n_bins(options.get("n_q2_bins") or DEFAULT_N_BINS)
         if _should_skip_fetch("lhcb:lhcb_bmeson_data", force):
             result.skipped.append("lhcb:lhcb_bmeson_data")
             return result
         if default_path.is_file() and not force:
-            result.skipped.append("lhcb:lhcb_bmeson_data")
-            return result
-        save_default_dataset(default_path)
+            import numpy as np
+
+            existing = np.load(default_path, allow_pickle=False)
+            if len(existing) >= n_bins:
+                result.skipped.append("lhcb:lhcb_bmeson_data")
+                return result
+        download_lhcb_bmeson_dataset(
+            n_bins=n_bins,
+            force_refresh=True,
+            dest=default_path,
+        )
         result.fetched.append("lhcb_bmeson_data")
         return result
 

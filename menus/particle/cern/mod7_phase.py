@@ -77,6 +77,50 @@ def weighted_mod7_histogram(
     )
 
 
+def partition_mod7_histogram(
+    hist: np.ndarray,
+    *,
+    bound_slots: tuple[int, ...] = (),
+) -> dict[str, float | bool | str]:
+    """
+    Split a mod-7 occupancy histogram. Raw hist remains E_tot.
+
+    Occupancy in ``bound_slots`` is candidate E_b only if those slots were
+    pre-specified (T1). Empty bound_slots → entire hist is UNBOUND/AMBIGUOUS.
+    """
+    from tav_shared.bound_unbound_energy import partition_energy
+
+    h = np.asarray(hist, dtype=float).ravel()
+    if h.size < MOD7_SLOT_COUNT:
+        h = np.pad(h, (0, MOD7_SLOT_COUNT - h.size))
+    h = h[:MOD7_SLOT_COUNT]
+    discrete = np.zeros(MOD7_SLOT_COUNT, dtype=bool)
+    for slot in bound_slots:
+        if 0 <= int(slot) < MOD7_SLOT_COUNT:
+            discrete[int(slot)] = True
+    split = partition_energy(
+        h,
+        e_free=None,
+        e_th=None,
+        is_discrete_harmonic=discrete if np.any(discrete) else None,
+        tau_bind_ok=True if np.any(discrete) else None,
+        from_total_aggregator=True,
+        ledger="content",
+    )
+    return {
+        "E_bound_clean": float(split["sum_E_b"]),
+        "E_unbound_clean": float(split["sum_E_u"]),
+        "bound_flag_clean": bool(split["n_bound"] > 0),
+        "f_b": float(split["sum_E_b"] / max(split["sum_E_tot"], 1e-30)),
+        "f_u": float(split["sum_E_u"] / max(split["sum_E_tot"], 1e-30)),
+        "energy_ledger": "content",
+        "note_energy": (
+            "weighted_mod7_histogram is an E_tot occupancy aggregator. "
+            "Without an explicit bound slot list, mass stays E_unbound_clean."
+        ),
+    }
+
+
 def mod7_fractions_from_histogram(hist: np.ndarray) -> list[float]:
     """Normalize a 7-bin mod-7 histogram to fractions."""
     h = np.asarray(hist, dtype=np.float64).ravel()

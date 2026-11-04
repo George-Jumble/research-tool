@@ -7,7 +7,7 @@ def fetch_cms_data(file_url, tree_name="Events"):
     """
     Connects to a remote CMS Open Data .root file and extracts physics objects.
     """
-    print(f"\n[TAV ENGINE] Piercing CMS domain: {file_url}")
+    print(f"\n[Superblock Residual Engine] Piercing CMS domain: {file_url}")
     try:
         # Connect to the remote ROOT file
         with uproot.open(file_url) as file:
@@ -17,10 +17,10 @@ def fetch_cms_data(file_url, tree_name="Events"):
             
             # Convert to Pandas for correlation analysis
             df = ak.to_pandas(data)
-            print(f"[TAV ENGINE] CMS Macroscopic arrays acquired.")
+            print(f"[Superblock Residual Engine] CMS Macroscopic arrays acquired.")
             return df
     except Exception as e:
-        print(f"[TAV ENGINE ERROR] CMS domain link failed: {e}")
+        print(f"[Superblock Residual Engine] ERROR CMS domain link failed: {e}")
         return None
 
 if __name__ == "__main__":

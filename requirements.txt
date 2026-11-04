@@ -23,6 +23,9 @@ uproot>=5.3
 awkward>=2.6
 xrootd>=6.1
 cernopendata-client>=1.0
+atlasopenmagic>=1.0
+fsspec>=2024.0
+fsspec-xrootd>=0.4
 
 # Analysis / visualization
 plotly>=5.0

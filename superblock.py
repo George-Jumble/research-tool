@@ -30,8 +30,46 @@ def calculate_dm_ratio(temperature):
     
     # Dark matter is the sum of the 5 hidden sectors [cite: 7240]
     omega_dm = np.sum(effective_gamma[1:])
-    
+
     return omega_dm / omega_baryon
+
+
+def calculate_dm_ratio_energy_split(temperature):
+    """
+    Same Boltzmann weights as :func:`calculate_dm_ratio`, but do not book the
+    full hidden-sector sum as bound DM. Continuum thermal reservoir is E_u.
+    """
+    from tav_shared.bound_unbound_energy import partition_energy
+
+    probabilities = np.exp(-beta_sq / temperature)
+    effective_gamma = gamma * probabilities * v_factors
+    omega_baryon = effective_gamma[0]
+    hidden = effective_gamma[1:]
+    # No discrete-well flag per domain in this script → AMBIGUOUS, not E_b.
+    split = partition_energy(
+        hidden,
+        e_free=None,
+        e_th=None,
+        is_discrete_harmonic=None,
+        tau_bind_ok=None,
+        from_total_aggregator=True,
+        ledger="content",
+    )
+    omega_dm_raw = float(np.sum(hidden))
+    return {
+        "omega_dm_raw": omega_dm_raw,
+        "omega_baryon": float(omega_baryon),
+        "ratio_raw": float(omega_dm_raw / max(omega_baryon, 1e-30)),
+        "E_bound_clean": float(split["sum_E_b"]),
+        "E_unbound_clean": float(split["sum_E_u"]),
+        "bound_flag_clean": False,
+        "n_ambiguous": int(split["n_ambiguous"]),
+        "energy_ledger": "content",
+        "note_energy": (
+            "omega_dm_raw = sum(hidden sectors) is E_tot. Without T1–T4 those "
+            "sectors are AMBIGUOUS and leave the bound ledger (E_bound_clean=0)."
+        ),
+    }
 
 # --- Simulation Execution ---
 # Test a range of "Vacuum Temperatures" to see how the ratio evolves

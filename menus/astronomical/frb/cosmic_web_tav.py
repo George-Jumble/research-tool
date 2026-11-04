@@ -279,7 +279,7 @@ def run_frb_web_analysis(
     frb_frame = analyze_dm_residuals(frb_frame)
     group_stats = group_dm_statistics(frb_frame)
 
-    print("\n[TAV ENGINE] DM residual statistics by path type:")
+    print("\n[Superblock Residual Engine] DM residual statistics by path type:")
     print(group_stats.to_string())
 
     freqs, power, harmonic_peaks, detected = analyze_tav_harmonics(
@@ -375,7 +375,7 @@ def plot_frb_web_analysis(
             plt.close(fig2)
 
     for path in saved:
-        print(f"[TAV ENGINE] Plot saved: {path}")
+        print(f"[Superblock Residual Engine] Plot saved: {path}")
     return saved
 
 
@@ -406,7 +406,7 @@ def run_pipeline(
         from tav_shared.n_selector_registry import subsample_rows
 
         n_use = max(3, int(max_frbs))
-        print(f"[TAV ENGINE] Subsampling FRB catalog: {len(frb_frame)} → {n_use}")
+        print(f"[Superblock Residual Engine] Subsampling FRB catalog: {len(frb_frame)} → {n_use}")
         frb_frame = subsample_rows(frb_frame, n_use)
 
     (
@@ -434,7 +434,7 @@ def run_pipeline(
         tav_resonance_detected=detected,
     )
 
-    print("\n[TAV ENGINE] FRB Cosmic-Web Tav Scan")
+    print("\n[Superblock Residual Engine] FRB Cosmic-Web Tav Scan")
     for line in result.summary_lines():
         print(line)
 

@@ -1876,4 +1876,4 @@ def run_enhanced_validation_from_lepton_results(
 
 if __name__ == "__main__":
     print("Tav-Superblock CMS Enhanced Validation Module v2 loaded successfully.")
-    print("Ready for integration with TAV ENGINE pipeline and photon kinematics analysis.")
+    print("Ready for the Superblock residual pipeline and photon kinematics analysis.")

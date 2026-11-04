@@ -1,11 +1,42 @@
-# Tau-Superblock Research Engine
+# Superblock Research Tool
 
-Interactive curses-based research console for the **Tau Universe / Tav-Superblock** framework. Download scientific datasets, run τ-harmonic analyses across cosmology, particle physics, and empirical confrontations, and optionally review results with remote LLM providers.
+Interactive curses console for **3+1D Superblock / Mirron** residuals. Loaders for DESI DR2, SPARC, CMS, LHCb, LIGO/LISA, and Casimir stay. Default scoring does not apply Tau, Tav, KK, 142857, or 5D templates.
 
 **Entry point:** `research_tool.py`
 
+Boot file: `config/superblock_only.json` (`tau_5d_templates` is forced false).
+
+## Residual analysis (live question)
+
+After a standard 3+1D ΛCDM, SM, GR, or Newtonian SPARC reduction, do the residuals match Superblock / Mirron predictions and not a compact extra dimension?
+
+Rejected on the default path: 7-fold Tav / KK signatures, a 7 h⁻¹ Mpc compact S¹, the 142857 comb, RGC as a cosmological backend, and a 5D roll or Coleman bounce.
+
+Full key and pipeline: [docs/RESIDUAL_ANALYSIS.md](docs/RESIDUAL_ANALYSIS.md).
+
+Retired menu note: [docs/retired/RETIRED_TAU_MODULES.md](docs/retired/RETIRED_TAU_MODULES.md).
+
+Inventory: [docs/SUPERBLOCK_ONLY_INVENTORY.md](docs/SUPERBLOCK_ONLY_INVENTORY.md).
+
+## Version
+
+See [VERSION](VERSION) and [CHANGELOG.md](CHANGELOG.md). Current corpus: **2026.10.13**.
+
+## Command list
+
+- `python research_tool.py geometry` — prints \(m_0\), \(r_M\) from `sb_engine/constants.py`
+- Live residual path: SPARC Template B (`kernels/g_avg.py`), DESI sound horizon (`sb_engine/sound_horizon.py`), FRB DM load, empirical Yang-Mills \(0^{++}\)
+- hold: neutron (J-PARC appearance; \(\varepsilon\) not applied)
+- not live: Tav runner, BBN yield scorer, extra \(J^{PC}\) glueball packs
+- `sb_engine/{cms,casimir,sparc}.py` — SYNTHETIC illustrations only
+
+The empirical menu does not feed PASS into SPARC, DESI, CMS, Casimir, or bounce.
+
+## Historical notes (not the live path)
+
 ## Latest upgrade highlights
 
+- **Merged fork code** — this V2 build includes the merged code from Clay Gatlin's fork, plus bug fixes.
 - **Global fetch enforcement** — shared `DataManager` wiring is now available across runtime dispatch and ingestion validators, with `data_key`-based caching.
 - **Persistent logging policy** — data operations now write to `research_tool.log` for fetch, cache-hit, and failure traceability.
 - **Mock data fallback** — `use_mock` allows pipeline validation when live CERN/DESI sources are unavailable.
