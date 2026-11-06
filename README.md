@@ -18,7 +18,7 @@ Inventory: [docs/SUPERBLOCK_ONLY_INVENTORY.md](docs/SUPERBLOCK_ONLY_INVENTORY.md
 
 ## Version
 
-See [VERSION](VERSION) and [CHANGELOG.md](CHANGELOG.md). Current corpus: **2026.10.13**.
+See [VERSION](VERSION) and [CHANGELOG.md](CHANGELOG.md). Release **2026.11.06**. Corpus date **2026-11-04** (`sb_engine/constants.py`).
 
 ## Command list
 

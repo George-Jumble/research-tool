@@ -1,6 +1,6 @@
 # Test-suite update for Superblock flagship v5 (2026-11-04)
 
-Branch `v5-tests-update`, based on `main` @ `8a2e32b` (tag `v2026.10.13`). Nothing pushed.
+Branch `v5-tests-update`, based on `main` @ `8a2e32b` (tag `v2026.10.13`). Released as **2026.11.06**.
 
 **Framework source of truth:** *The Superblock Universe* v5 (Zenodo draft 23953533; concept DOI
 10.5281/zenodo.22948740), `Rulings_2026-11-01.md` (N1–N13), `Rulings_2026-11-04.md` (N13–N30),
@@ -112,7 +112,7 @@ New writers: `test_dark_to_ordinary`, `test_coupling_invariance`, `test_bbn_v5`,
 
 ## Not changed / for the author
 
-- `VERSION` is still `2026.10.13`. Bumping the release number is your call.
+- `VERSION` is **2026.11.06**. `CORPUS_DATE` stays `2026-11-04`.
 - The retired DESI/TSB research modules (`menus/tsb_research`, `menus/astronomical/desi/bao_ekk_geometry.py`, …) still carry their own 10.74 constants. They are off the default menu and are not edited here.
 
 ## Follow-up (2026-11-04): `calibrate_gamma()` removed

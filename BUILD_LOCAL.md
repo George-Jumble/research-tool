@@ -1,7 +1,7 @@
 # Build and run locally (v5 tests update)
 
-This tree is `George-Jumble/research-tool` `main` @ `8a2e32b` (tag `v2026.10.13`) plus the local branch
-`v5-tests-update`. See `CHANGES_v5_tests.md` for what changed. It uses only the repo's existing tooling
+This tree is `George-Jumble/research-tool` release **2026.11.06** (corpus date 2026-11-04).
+See `CHANGELOG.md` and `CHANGES_v5_tests.md`. It uses only the repo's existing tooling
 (Python 3.11+, `venv`, `requirements.txt`), with nothing new to install system-wide.
 
 ## Option A: your existing research_tool venv (no changes)
@@ -32,13 +32,10 @@ This caches DESI DR2 (`datasets/desi/bao_data`, Cobaya clone) and the SPARC Mass
 clone command in the reason, and the SPARC test downloads the table once (or skips offline).
 
 ## Expected result
-`77 passed, 1 skipped, 3 xfailed` with DESI tables cached (`73 passed, 5 skipped, 3 xfailed` without them).
-The 3 xfails are open questions: lithium-7, the γ¹ derivation, and the Lyman-α check.
+`150 passed, 2 skipped, 3 xfailed` with DESI DR2, SPARC, AlterBBN, and GW150914 strain cached, Planck TT not cached, and CMS ROOT files already present (the missing-cache CERN test then skips). The 3 xfails are open questions: lithium-7, the γ¹ derivation, and the Lyman-α check. Without DESI, 4 loader tests skip. Without AlterBBN, its tests skip instead of failing.
 
 ## Git
-If you got the `.bundle`: `git clone research-tool_v5_tests.bundle research-tool && cd research-tool &&
-git checkout v5-tests-update`. Or apply `research-tool_v5_tests.diff` to a checkout of `8a2e32b` with
-`git apply research-tool_v5_tests.diff`.
+Release tag `v2026.11.06` on `main`.
 
 The v5 confrontations can also be run from the curses UI: Empirical Tests → **Superblock v5 Confrontations**,
 or `python -m menus.empirical_tests.tests --tests v5 --sources planck2018_cosmology,superblock_v5_predictions,bbn_abundances,hidden_bao_class_grid,relay_class_configs`.
