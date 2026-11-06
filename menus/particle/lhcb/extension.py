@@ -1,8 +1,8 @@
 """
 LHCb flavor residuals ↔ research_tool.py
 
-Download materializes the C9(q²) series under datasets/lhcb/. Score / Plot / Full Report are
-scored by the Superblock residual engine (template C); plot actions draw ΔC9 vs q².
+Download fetches the real LHCb 2020 angular bins under datasets/lhcb/. Score / Plot / Full Report
+are scored by the Superblock residual engine (template C); plot actions draw Δobs vs q² [GeV²].
 """
 
 from __future__ import annotations
@@ -10,11 +10,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 from menus.particle.lhcb.flavor import (
     DEFAULT_DATA_PATH,
-    DEFAULT_N_BINS,
-    clip_n_bins,
+    DEFAULT_OBSERVABLE,
+    LHCB_2020_BINS,
+    SM_PREDICTIONS,
 )
 from sb_shared.run_output import parse_show_graphics
 
@@ -37,38 +39,78 @@ _ACTION_CONFIG = {
 }
 
 
-def _plot_residual_report(report: dict, options: dict, show_popup: bool) -> str | None:
-    """Plot C9_exp - C9_SM vs q² from the residual engine's LHCb load (Template C)."""
-    from menus.particle.lhcb.flavor import ARTIFACTS_DIR, ensure_output_dirs, load_lhcb_data
+def _plot_arrays(report: dict, options: dict) -> dict | None:
+    """Residual points for the plot: prefer the report's real bins, else load the cached file."""
+    from menus.particle.lhcb.flavor import load_lhcb_data, residual_arrays
 
+    bins = report.get("lhcb_bins")
+    if bins:
+        q2c = np.array([b["q2_center_gev2"] for b in bins], float)
+        return {
+            "q2": q2c,
+            "lo": np.array([b["q2_min_gev2"] for b in bins], float),
+            "hi": np.array([b["q2_max_gev2"] for b in bins], float),
+            "r": np.array([b["obs"] - b["sm"] for b in bins], float),
+            "sig": np.sqrt(np.array([b["obs_err"] ** 2 + b["sm_err"] ** 2 for b in bins], float)),
+            "label": str((report.get("lhcb_provenance") or {}).get("observable_label") or "P5′"),
+        }
     data_path = (options.get("data_file") or str(DEFAULT_DATA_PATH)).strip()
-    n_bins = clip_n_bins(options.get("n_q2_bins") or DEFAULT_N_BINS)
     try:
-        data, path = load_lhcb_data(Path(data_path), n_bins=n_bins)
+        data, _ = load_lhcb_data(Path(data_path))
+        arr = residual_arrays(data)
     except Exception as exc:
         print(f"[Superblock Residual Engine] LHCb plot skipped: {exc}")
+        return None
+    return {
+        # residual_arrays always returns q² in GeV² (q2_bin on disk is MeV²).
+        "q2": arr["q2_gev2"],
+        "lo": arr["q2_min_gev2"],
+        "hi": arr["q2_max_gev2"],
+        "r": arr["D"] - arr["B"],
+        "sig": arr["sigma"],
+        "label": "C9" if arr["schema"] == "legacy_c9" else "P5′",
+    }
+
+
+def _plot_residual_report(report: dict, options: dict, show_popup: bool) -> str | None:
+    """Plot Δobs(q²) = obs − SM per q² bin [GeV²] with the Template C Mirron curve S_C(q²)."""
+    from kernels.mirron_c import M_MIR_GEV, s_c
+    from menus.particle.lhcb.flavor import ARTIFACTS_DIR, ensure_output_dirs
+
+    pts = _plot_arrays(report, options)
+    if pts is None:
         return None
     ensure_output_dirs()
     output_name = (options.get("output_name") or "lhcb_flavor_residuals.png").strip()
     if not output_name.endswith(".png"):
         output_name += ".png"
     out = ARTIFACTS_DIR / output_name
+    label = pts["label"]
+    q2 = pts["q2"]
+    xerr = None
+    if pts["lo"] is not None and pts["hi"] is not None:
+        xerr = np.vstack([q2 - pts["lo"], pts["hi"] - q2])
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.errorbar(
-        data["q2_bin"], data["C9_exp"] - data["C9_SM"], yerr=data["C9_exp_err"],
-        fmt="o", ms=4, capsize=2, label="C9_exp − C9_SM",
-    )
+    ax.errorbar(q2, pts["r"], xerr=xerr, yerr=pts["sig"], fmt="o", ms=4, capsize=2,
+                label=f"Δ{label}(q²) = {label}_LHCb − {label}_SM")
     ax.axhline(0.0, color="k", lw=0.8, label="SM baseline")
+    amp = report.get("A") if report.get("A") is not None else (report.get("score") or {}).get("A")
+    if amp is not None:
+        grid = np.linspace(0.05, max(19.5, float(np.max(q2)) + 0.5), 400)
+        ax.plot(grid, s_c(grid, float(amp)), "r-",
+                label=f"Mirron S_C(q²) = A·M²/(M²+q²), A={float(amp):.3f}, M={M_MIR_GEV * 1000:.1f} MeV")
+    for lo, hi in ((8.0, 11.0), (12.5, 15.0)):
+        ax.axvspan(lo, hi, color="0.9", lw=0)
     ax.set_xlabel("q² [GeV²]")
-    ax.set_ylabel("ΔC9")
-    ax.set_title(
-        f"LHCb flavor residuals (Template C)  verdict={report.get('verdict')}  "
-        f"N={report.get('N')}"
-    )
-    ax.legend()
+    ax.set_ylabel(f"Δ{label}")
+    title = f"LHCb flavor residuals (Template C)  verdict={report.get('verdict')}  N={report.get('N')}"
+    if report.get("fetch_source"):
+        title += f"\n{report.get('fetch_source')}"
+    ax.set_title(title, fontsize=9)
+    ax.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(out, dpi=150)
-    print(f"[Superblock Residual Engine] Plot saved: {out} (data {path.name})")
+    print(f"[Superblock Residual Engine] Plot saved: {out}")
     if show_popup:
         plt.show()
     else:
@@ -84,13 +126,14 @@ def _yes(value: str) -> bool:
     return str(value or "").strip().lower() in {"yes", "y", "true", "1"}
 
 
-def _n_bins_field() -> dict:
+def _observable_field() -> dict:
     return {
-        "key": "n_q2_bins",
-        "label": "Number of q² bins (sample size)",
-        "default": str(DEFAULT_N_BINS),
+        "key": "observable",
+        "label": "Observable (LHCb 2020, 8 narrow q² bins)",
+        "default": DEFAULT_OBSERVABLE,
         "required": False,
-        "hint": f"Default {DEFAULT_N_BINS} (was hard-wired to 6). Range 6–200.",
+        "hint": "P5p = P5′ (flagship anomaly) | FL | AFB. Real data has exactly 8 bins; no interpolation.",
+        "choices": list(SM_PREDICTIONS),
     }
 
 
@@ -101,7 +144,7 @@ def entry_fields(action: str) -> list[dict]:
     """Curses entry-form field specs for LHCb flavor actions."""
     if action == DOWNLOAD_ACTION:
         return [
-            _n_bins_field(),
+            _observable_field(),
             {
                 "key": "force_refresh",
                 "label": "Force refresh",
@@ -119,7 +162,6 @@ def entry_fields(action: str) -> list[dict]:
             "required": False,
             "hint": "Blank uses datasets/lhcb/lhcb_bmeson_data.npy from Download",
         },
-        _n_bins_field(),
         {
             "key": "output_name",
             "label": "Plot filename (optional)",
@@ -145,17 +187,16 @@ def entry_instructions(action: str) -> list[str]:
     """Short help bullets shown above the LHCb flavor entry form."""
     if action == DOWNLOAD_ACTION:
         return [
-            "First step: materialize the B-meson C9(q²) series under datasets/lhcb/.",
-            "Tries HEPData (LHCb PRL 125, 011802) then a published-style interpolation.",
-            f"Sample size is the number of q² bins (default {DEFAULT_N_BINS}; was 6).",
+            "First step: fetch the real LHCb 2020 B0→K*μμ angular data into datasets/lhcb/.",
+            "Source: LHCb PRL 125, 011802 (arXiv:2003.04831) via flavio measurements.yml (HTTPS).",
+            f"{len(LHCB_2020_BINS)} narrow q² bins as published; synthetic caches are always replaced.",
             "Run an analysis action after the download finishes.",
         ]
     return [
         "Run 'Download LHCb B-meson Dataset' first if datasets/lhcb/ is empty.",
-        "Loads structured NumPy file: q2_bin, C9_exp, C9_exp_err, C9_SM.",
+        "Loads LHCb 2020 bins: obs ± sqrt(stat²+syst²) and the SM value of the same observable.",
         f"Default path: {DEFAULT_DATA_PATH}",
-        f"q² bin count defaults to {DEFAULT_N_BINS} (overrides a stale 6-bin file).",
-        "Residual D − B = C9_exp − C9_SM per q² bin (SM baseline).",
+        "Residual D − B = obs_LHCb − obs_SM per q² bin (e.g. ΔP5′), scored vs Mirron S_C(q²).",
         "Plot actions save PNG under artifacts/lhcb/; popup opens after curses exits.",
     ]
 
@@ -175,13 +216,12 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
             return routed.get("report_path")
         return routed
     options = options or {}
-    n_bins = clip_n_bins(options.get("n_q2_bins") or DEFAULT_N_BINS)
 
     if selection == DOWNLOAD_ACTION:
         from menus.particle.lhcb.fetcher import download_lhcb_bmeson_dataset
 
         download_lhcb_bmeson_dataset(
-            n_bins=n_bins,
+            observable=(options.get("observable") or DEFAULT_OBSERVABLE).strip(),
             force_refresh=_yes(options.get("force_refresh", "no")),
         )
         print("[Superblock Residual Engine] Next: Score Flavor Residuals or Full Flavor Residual Report.")

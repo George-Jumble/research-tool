@@ -88,7 +88,7 @@ def pick_module(stdscr, *, title: str = "Select Module") -> Optional[DatasetProv
             current -= 1
         elif key == curses.KEY_DOWN and current < len(providers) - 1:
             current += 1
-        elif key in (10, 13):
+        elif key in (10, 13, curses.KEY_ENTER):
             return providers[current]
 
 
@@ -174,7 +174,7 @@ def pick_targets(
         key = stdscr.getch()
         if key in (ord("q"), ord("Q"), 27):
             return None
-        if key in (10, 13):
+        if key in (10, 13, curses.KEY_ENTER):
             return sorted(selected) if selected else None
         if key == ord("a"):
             if mode == "run":
@@ -250,7 +250,7 @@ def pick_action(stdscr, provider: DatasetProvider) -> Optional[str]:
             current -= 1
         elif key == curses.KEY_DOWN and current < len(actions) - 1:
             current += 1
-        elif key in (10, 13):
+        elif key in (10, 13, curses.KEY_ENTER):
             return actions[current]
 
 

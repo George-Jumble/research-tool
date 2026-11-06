@@ -31,13 +31,11 @@ def test_alpha_s_at_mirron_scale_reports_instability():
 
 
 def test_lhcb_template_c_produces_chi2_sb(tmp_path):
-    from menus.particle.lhcb.flavor import DEFAULT_DATA_PATH, load_lhcb_data
+    from menus.particle.lhcb.flavor import DEFAULT_DATA_PATH, load_lhcb_data, residual_arrays
 
     data, _ = load_lhcb_data(str(DEFAULT_DATA_PATH))
-    D = np.asarray(data["C9_exp"], float)
-    B = np.asarray(data["C9_SM"], float)
-    sig = np.asarray(data["C9_exp_err"], float)
-    q2 = np.asarray(data["q2_bin"], float) / 1e6
+    arr = residual_arrays(data)
+    D, B, sig, q2 = arr["D"], arr["B"], arr["sigma"], arr["q2_gev2"]
     from superblock_residual import score_against_template
 
     out = score_against_template(D - B, template="C", sigma=sig, q2=q2)

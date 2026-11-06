@@ -91,10 +91,18 @@ def ensure_project_dirs() -> None:
     #     print(f"[Superblock Residual Engine] Warning: remote mkdir skipped ({e})")
 
 
+def _dir_exists(path: Path) -> bool:
+    """True when ``path`` is a directory. A stale mount (EIO) counts as absent."""
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+
 def finished_a_search_dirs() -> tuple[Path, ...]:
     """Archive locations for SPARC / FRB CSV restores (local staging + legacy)."""
     dirs = [FINISHED_A_DIR, LEGACY_FINISHED_A_DIR]
-    if _LEGACY_PROTON_A.is_dir():
+    if _dir_exists(_LEGACY_PROTON_A):
         dirs.append(_LEGACY_PROTON_A)
     return tuple(dirs)
 
@@ -107,9 +115,9 @@ def finished_fits_search_dirs() -> tuple[Path, ...]:
         LEGACY_FINISHED2_DIR,
         LEGACY_FINISHED_DIR,
     ]
-    if _LEGACY_PROTON_2.is_dir():
+    if _dir_exists(_LEGACY_PROTON_2):
         dirs.append(_LEGACY_PROTON_2)
-    if _LEGACY_PROTON_F.is_dir():
+    if _dir_exists(_LEGACY_PROTON_F):
         dirs.append(_LEGACY_PROTON_F)
     return tuple(dirs)
 
@@ -144,7 +152,7 @@ def delete_previous_archived_runs(
     seen: set[Path] = set()
 
     for directory in (Path(archive_dir), *also_search):
-        if not directory.is_dir():
+        if not _dir_exists(directory):
             continue
         for candidate in directory.iterdir():
             if not candidate.is_file() or candidate in seen:

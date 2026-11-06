@@ -102,7 +102,7 @@ def main_curses(stdscr):
             current_row -= 1
         elif key == curses.KEY_DOWN and current_row < len(current_menu) - 1:
             current_row += 1
-        elif key in (10, 13):
+        elif key in (10, 13, curses.KEY_ENTER):
             selection = current_menu[current_row]
 
             if selection == "Exit":

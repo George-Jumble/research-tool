@@ -76,7 +76,7 @@ def _pick_module(stdscr, entries: List[ModuleCacheEntry]) -> Optional[ModuleCach
             current -= 1
         elif key == curses.KEY_DOWN and current < len(entries) - 1:
             current += 1
-        elif key in (10, 13):
+        elif key in (10, 13, curses.KEY_ENTER):
             return entries[current]
 
 

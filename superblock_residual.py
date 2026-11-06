@@ -500,26 +500,79 @@ def _load_frb() -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None
     return D, B, sigma, z_out, notes
 
 
-def _load_lhcb(options: dict | None = None) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None, np.ndarray | None, list[str]]:
-    """LHCb C9 per q² bin: D = C9_exp, B = C9_SM (SM baseline), sigma = C9_exp_err."""
-    from menus.particle.lhcb.flavor import DEFAULT_DATA_PATH, load_lhcb_data
+_LHCB_EXTRA: dict[str, Any] = {}
 
+
+def _load_lhcb(options: dict | None = None) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None, np.ndarray | None, list[str]]:
+    """LHCb B⁰→K*⁰μμ per q² bin.
+
+    Real LHCb 2020 schema: D = ⟨obs⟩_LHCb, B = ⟨obs⟩_SM (same observable, flavio SM),
+    σ = sqrt(stat² + syst² + σ_SM²). Legacy C9 schema: D = C9_exp, B = C9_SM, σ = C9_exp_err.
+    Provenance from lhcb_bmeson_fetch.json is kept in _LHCB_EXTRA for the report.
+    """
+    from menus.particle.lhcb.fetcher import is_real_provenance, read_fetch_metadata
+    from menus.particle.lhcb.flavor import DEFAULT_DATA_PATH, OBSERVABLE_LABELS, load_lhcb_data, residual_arrays
+
+    _LHCB_EXTRA.clear()
     opts = options or {}
     data_path = str(opts.get("data_file") or DEFAULT_DATA_PATH).strip()
     n_bins = opts.get("n_q2_bins")
     data, path = load_lhcb_data(data_path, n_bins=int(n_bins) if n_bins else None)
-    notes = [
-        "Step 1 baseline: SM Wilson coefficient C9_SM per q² bin.",
+    arr = residual_arrays(data)
+    meta = read_fetch_metadata(path)
+    real = arr["schema"] == "lhcb2020_real" and is_real_provenance(meta)
+    observable = meta.get("observable") if arr["schema"] == "lhcb2020_real" else "C9"
+    prov = {
+        "fetch_source": meta.get("source") or "missing_sidecar",
+        "real_data": bool(real),
+        "schema": arr["schema"],
+        "observable": observable,
+        "observable_label": OBSERVABLE_LABELS.get(str(observable), str(observable)),
+        "inspire_id": meta.get("inspire_id") or meta.get("inspire"),
+        "arxiv_id": meta.get("arxiv_id"),
+        "citation": meta.get("citation"),
+        "sm_source": meta.get("sm_source"),
+        "data_file": str(path),
+    }
+    if not real:
+        prov["warning"] = (
+            "SYNTHETIC / FALLBACK LHCb data loaded (source="
+            f"{prov['fetch_source']!r}, schema={arr['schema']}): not a measurement. "
+            "Run 'Download LHCb B-meson Dataset' to fetch the real LHCb 2020 bins."
+        )
+    if arr["schema"] == "lhcb2020_real":
+        prov["bins"] = [
+            {
+                "q2_min_gev2": float(r["q2_min_gev2"]),
+                "q2_max_gev2": float(r["q2_max_gev2"]),
+                "q2_center_gev2": float(r["q2_center_gev2"]),
+                "obs": float(r["obs"]),
+                "stat_err": float(r["stat_err"]),
+                "syst_err": float(r["syst_err"]),
+                "obs_err": float(r["obs_err"]),
+                "sm": float(r["sm"]),
+                "sm_err": float(r["sm_err"]),
+                "residual": float(r["obs"] - r["sm"]),
+            }
+            for r in data
+        ]
+    _LHCB_EXTRA.update(prov)
+    if arr["schema"] == "lhcb2020_real":
+        notes = [
+            f"Step 1 baseline: SM ⟨{observable}⟩ per q² bin ({meta.get('sm_source') or 'tabulated'}).",
+            "σ = sqrt(stat² + syst² + σ_SM²) per bin.",
+        ]
+    else:
+        notes = ["Step 1 baseline: SM Wilson coefficient C9_SM per q² bin."]
+    notes += [
         f"lhcb_file={path.name}",
         f"n_q2_bins={len(data)}",
+        f"fetch_source={prov['fetch_source']}",
     ]
-    D = _as_float_array(data["C9_exp"])
-    B = _as_float_array(data["C9_SM"])
-    sigma = _as_float_array(data["C9_exp_err"])
-    # flavor.py stores q² in MeV²; Template C (and LHCb convention) uses GeV².
-    q2 = _as_float_array(data["q2_bin"]) / 1.0e6
-    notes.append("q² converted MeV² → GeV² for Template C")
-    return D, B, sigma, q2, notes
+    if prov.get("warning"):
+        notes.append(prov["warning"])
+    notes.append("q² in GeV² for Template C")
+    return arr["D"], arr["B"], arr["sigma"], arr["q2_gev2"], notes
 
 
 def _opt_flag(options: dict | None, key: str, default: bool) -> bool:
@@ -1061,6 +1114,14 @@ def run_superblock_residual(
             joint["chi2_Lambda_per_N"] = report["chi2_Lambda"] / report["N"]
         report["joint_constraints"] = joint
         report["postmerger_scan"] = {p["label"]: p["postmerger_scan"] for p in report["points"] if p.get("postmerger_scan")}
+    if module_tag == "LHCB_FLAVOR" and _LHCB_EXTRA:
+        report["lhcb_provenance"] = {k: v for k, v in _LHCB_EXTRA.items() if k != "bins"}
+        if _LHCB_EXTRA.get("bins"):
+            report["lhcb_bins"] = list(_LHCB_EXTRA["bins"])
+        for key in ("fetch_source", "observable", "inspire_id", "arxiv_id", "citation", "real_data"):
+            report[key] = _LHCB_EXTRA.get(key)
+        if _LHCB_EXTRA.get("warning"):
+            report["warning"] = _LHCB_EXTRA["warning"]
     if module_tag == "DESI_BAO":
         from sb_engine.sound_horizon import sound_horizon
 

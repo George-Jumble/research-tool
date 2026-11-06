@@ -1,7 +1,14 @@
 """
-LHCb B → K*μμ Wilson-coefficient dataset (C9 per q² bin): curated series, cache I/O and loader.
+LHCb B⁰ → K*⁰μ⁺μ⁻ dataset: cache I/O and loader.
 
-Cache: datasets/lhcb/lhcb_bmeson_data.npy (bundled template under menus/particle/lhcb/data/).
+Primary schema (``REAL_DTYPE``): the published LHCb 2020 angular measurement
+(PRL 125, 011802; arXiv:2003.04831; INSPIRE 1784890), one row per narrow q² bin, with a
+per-bin SM prediction of the *same* observable (e.g. ⟨P5′⟩_SM), never C9_SM.
+
+Legacy schema (``DTYPE``): the old C9(q²) template series (q2_bin, C9_exp, C9_exp_err, C9_SM).
+It is still readable for backward compatibility but is synthetic, not a measurement.
+
+Cache: datasets/lhcb/lhcb_bmeson_data.npy + lhcb_bmeson_fetch.json (provenance sidecar).
 """
 
 from __future__ import annotations
@@ -47,6 +54,95 @@ DTYPE = np.dtype(
         ("C9_SM", "f8"),
     ]
 )
+
+
+# Real LHCb 2020 rows. q2_bin keeps the cache convention (bin centre in MeV²); the explicit
+# bin edges / centre in GeV² sit next to it so nothing has to guess units.
+REAL_DTYPE = np.dtype(
+    [
+        ("q2_bin", "f8"),
+        ("q2_min_gev2", "f8"),
+        ("q2_max_gev2", "f8"),
+        ("q2_center_gev2", "f8"),
+        ("obs", "f8"),
+        ("stat_err", "f8"),
+        ("syst_err", "f8"),
+        ("obs_err", "f8"),
+        ("sm", "f8"),
+        ("sm_err", "f8"),
+    ]
+)
+
+# The 8 narrow q² bins [GeV²] of LHCb PRL 125, 011802 (charmonium regions excluded).
+LHCB_2020_BINS: tuple[tuple[float, float], ...] = (
+    (0.1, 0.98), (1.1, 2.5), (2.5, 4.0), (4.0, 6.0),
+    (6.0, 8.0), (11.0, 12.5), (15.0, 17.0), (17.0, 19.0),
+)
+
+DEFAULT_OBSERVABLE = "P5p"
+
+# SM bin averages (value, theory σ) in the same 8 bins, from flavio 2.7.1 with default SM
+# nuisance parameters: flavio.sm_prediction / sm_uncertainty(N=300) of "<obs>(B0->K*mumu)".
+# flavio is the package LHCb itself used for its C9 fit in arXiv:2003.04831. Computed once,
+# offline (flavio is not a research-tool dependency). Above 8 GeV² flavio warns that QCDF
+# corrections are not trusted, so the high-q² SM values carry extra model dependence.
+SM_SOURCE = "flavio 2.7.1 default SM (sm_prediction / sm_uncertainty N=300), computed offline"
+SM_PREDICTIONS: dict[str, tuple[tuple[float, float], ...]] = {
+    "P5p": ((0.6602, 0.0264), (0.1404, 0.0851), (-0.5003, 0.1027), (-0.7583, 0.0709),
+            (-0.8342, 0.0574), (-0.8224, 0.0268), (-0.6705, 0.0423), (-0.4831, 0.0447)),
+    "FL": ((0.2941, 0.0471), (0.7594, 0.0396), (0.7967, 0.0340), (0.7120, 0.0471),
+           (0.6076, 0.0585), (0.4353, 0.0392), (0.3485, 0.0328), (0.3281, 0.0289)),
+    "AFB": ((-0.0966, 0.0083), (-0.1385, 0.0281), (-0.0180, 0.0329), (0.1219, 0.0412),
+            (0.2399, 0.0459), (0.3908, 0.0248), (0.4022, 0.0326), (0.3187, 0.0321)),
+}
+
+OBSERVABLE_LABELS = {"P5p": "P5′", "FL": "F_L", "AFB": "A_FB"}
+
+
+def sm_prediction(observable: str, q2_min: float, q2_max: float) -> tuple[float, float] | None:
+    table = SM_PREDICTIONS.get(observable)
+    if table is None:
+        return None
+    for (lo, hi), val in zip(LHCB_2020_BINS, table):
+        if abs(lo - q2_min) < 1e-6 and abs(hi - q2_max) < 1e-6:
+            return val
+    return None
+
+
+def is_real_schema(data: np.ndarray) -> bool:
+    return bool(data.dtype.names) and {"obs", "sm", "obs_err"} <= set(data.dtype.names)
+
+
+def is_legacy_schema(data: np.ndarray) -> bool:
+    return bool(data.dtype.names) and {"C9_exp", "C9_SM", "C9_exp_err"} <= set(data.dtype.names)
+
+
+def residual_arrays(data: np.ndarray, *, include_theory: bool = True) -> dict:
+    """D, B, σ, q² [GeV²] for either schema (q2_bin is always stored in MeV²)."""
+    if is_real_schema(data):
+        sig = np.asarray(data["obs_err"], float)
+        if include_theory:
+            sig = np.sqrt(sig**2 + np.asarray(data["sm_err"], float) ** 2)
+        return {
+            "D": np.asarray(data["obs"], float),
+            "B": np.asarray(data["sm"], float),
+            "sigma": sig,
+            "q2_gev2": np.asarray(data["q2_center_gev2"], float),
+            "q2_min_gev2": np.asarray(data["q2_min_gev2"], float),
+            "q2_max_gev2": np.asarray(data["q2_max_gev2"], float),
+            "schema": "lhcb2020_real",
+        }
+    if is_legacy_schema(data):
+        return {
+            "D": np.asarray(data["C9_exp"], float),
+            "B": np.asarray(data["C9_SM"], float),
+            "sigma": np.asarray(data["C9_exp_err"], float),
+            "q2_gev2": np.asarray(data["q2_bin"], float) / 1.0e6,
+            "q2_min_gev2": None,
+            "q2_max_gev2": None,
+            "schema": "legacy_c9",
+        }
+    raise ValueError("unrecognised LHCb array schema")
 
 
 def ensure_output_dirs() -> None:
@@ -139,6 +235,13 @@ def load_lhcb_data(
             )
             save_default_dataset(path, n_bins=n_bins)
     data = np.load(path, allow_pickle=False)
+    if data.dtype.names is None and data.ndim == 2 and data.shape[1] >= 3:
+        # Legacy plain (q2 [MeV²], C9, err) array: promote to the C9 schema, C9_SM = -4.27.
+        rows = [(float(r[0]), float(r[1]), float(r[2]), -4.27) for r in data]
+        data = np.array(rows, dtype=DTYPE)
+    if data.dtype.names is not None and is_real_schema(data):
+        # Real measurement: never interpolate or resample.
+        return data, path
     if data.dtype.names is None:
         raise ValueError(
             f"{path} must be a structured array with fields "

@@ -98,22 +98,20 @@ def select_n_interactive(
             _safe_addstr(stdscr, row, 4, f"{prefix}{choice}", attr)
 
         stdscr.refresh()
-        key = stdscr.getch()
+        key = get_menu_key(stdscr)
 
         if key in (ord("q"), ord("Q"), 27):
             return None
-        if key in (10, 13):
+        if key in ENTER_KEYS:
             selected = choices[current]
             if selected == "Custom...":
-                _safe_addstr(stdscr, 16, 2, "Enter custom n: ")
+                label = "Enter custom n: "
+                _safe_addstr(stdscr, 16, 2, label)
                 stdscr.refresh()
-                curses.echo()
+                raw = read_line(stdscr, 16, 2 + len(label), width=8)
                 try:
-                    val = int(stdscr.getstr(16, 18, 5).decode().strip())
-                    curses.noecho()
-                    return max(3, val)
+                    return max(3, int((raw or "").strip()))
                 except ValueError:
-                    curses.noecho()
                     return None
             return int(selected)
 
@@ -153,13 +151,176 @@ def draw_menu(stdscr, title, options, current_row, breadcrumb=""):
     stdscr.refresh()
 
 
-def _read_field(stdscr, row, col, width=56):
-    curses.echo()
-    curses.curs_set(1)
-    raw = stdscr.getstr(row, col, width)
+# =============================================================================
+# BLOCK: Line editor (replaces getstr, which aborts on any keypad KEY_* token)
+# =============================================================================
+ENTER_KEYS = {10, 13, curses.KEY_ENTER}
+BACKSPACE_KEYS = {curses.KEY_BACKSPACE, 127, 8}
+CANCEL = object()
+
+# Application-keypad final bytes after ESC O (xterm/VT100 numeric keypad with smkx on).
+_SS3_KEYPAD = {
+    "p": "0", "q": "1", "r": "2", "s": "3", "t": "4", "u": "5", "v": "6", "w": "7", "x": "8",
+    "y": "9", "m": "-", "k": "+", "n": ".", "j": "*", "o": "/", "l": ",", "X": "=",
+}
+
+# ncurses names for the same keypad keys when keypad(True) decodes them (terminfo dependent:
+# KEY_A1/A3/B2/C1/C3 are fixed codes, the rest are extended codes like kpZRO / kb1).
+_KEYNAME_KEYPAD = {
+    "KEY_A1": "7", "ka2": "8", "KEY_A3": "9",
+    "kb1": "4", "KEY_B2": "5", "kb3": "6",
+    "KEY_C1": "1", "kc2": "2", "KEY_C3": "3",
+    "kpZRO": "0", "kpDOT": ".", "kpADD": "+", "kpSUB": "-", "kpMUL": "*", "kpDIV": "/",
+    "kpCMA": ",",
+}
+
+
+_FIXED_KEYPAD = {
+    curses.KEY_A1: "7", curses.KEY_A3: "9", curses.KEY_B2: "5", curses.KEY_C1: "1", curses.KEY_C3: "3",
+}
+
+
+def _keyname(key: int) -> str:
+    try:
+        return curses.keyname(key).decode("ascii", errors="replace")
+    except (ValueError, curses.error, OverflowError):
+        return ""
+
+
+def translate_key(key: int) -> str | None:
+    """Map one decoded key to a typed character, 'ENTER', 'BACKSPACE', or None (ignore)."""
+    if key in ENTER_KEYS:
+        return "ENTER"
+    if key in BACKSPACE_KEYS:
+        return "BACKSPACE"
+    if 32 <= key <= 126:
+        return chr(key)
+    if key in _FIXED_KEYPAD:
+        return _FIXED_KEYPAD[key]
+    name = _keyname(key)
+    if name in _KEYNAME_KEYPAD:
+        return _KEYNAME_KEYPAD[name]
+    if name in {"KEY_ENTER", "kent"}:
+        return "ENTER"
+    return None
+
+
+def _read_escape(stdscr) -> str | None:
+    """After a bare ESC (27): decode a following application-keypad / CSI sequence.
+
+    Returns a character, 'ENTER', 'CANCEL' (lone ESC), or None (unknown sequence, ignored).
+    """
+    stdscr.nodelay(True)
+    try:
+        seq = []
+        deadline = time.monotonic() + 0.05
+        while time.monotonic() < deadline and len(seq) < 8:
+            ch = stdscr.getch()
+            if ch == -1:
+                if seq and seq[0] == ord("O") and len(seq) >= 2:
+                    break
+                time.sleep(0.005)
+                continue
+            seq.append(ch)
+            if seq[0] == ord("O") and len(seq) == 2:
+                break
+            if seq[0] == ord("[") and len(seq) >= 2 and 64 <= ch <= 126:
+                break
+    finally:
+        stdscr.nodelay(False)
+    if not seq:
+        return "CANCEL"
+    final = chr(seq[-1]) if 0 <= seq[-1] < 256 else ""
+    if seq[0] in (ord("O"), ord("[")) and final in _ARROWS and len(seq) == 2:
+        return _ARROWS[final]
+    if seq[0] == ord("O") and len(seq) == 2:
+        if final == "M":
+            return "ENTER"
+        return _SS3_KEYPAD.get(final)
+    return None
+
+
+_ARROWS = {"A": "UP", "B": "DOWN", "C": "RIGHT", "D": "LEFT"}
+_ARROW_KEYS = {"UP": curses.KEY_UP, "DOWN": curses.KEY_DOWN, "LEFT": curses.KEY_LEFT, "RIGHT": curses.KEY_RIGHT}
+
+
+def get_menu_key(stdscr) -> int:
+    """getch() for menus/pickers: undecoded ESC [ A / ESC O B arrows become KEY_*, a lone ESC
+    stays 27 (cancel), and numpad Enter (ESC O M) becomes 10 instead of cancelling."""
+    key = stdscr.getch()
+    if key != 27:
+        return key
+    action = _read_escape(stdscr)
+    if action == "CANCEL":
+        return 27
+    if action == "ENTER":
+        return 10
+    if action in _ARROW_KEYS:
+        return _ARROW_KEYS[action]
+    if action and len(action) == 1:
+        return ord(action)
+    return -1
+
+
+def read_line(stdscr, row: int, col: int, width: int = 56, initial: str = "") -> str | None:
+    """Self-contained line editor: digits never submit; only Enter does.
+
+    Echo is off; the buffer is drawn explicitly at (row, col) so the ``[default] `` label left of
+    col is never overwritten. Returns the text, or None on a lone ESC.
+    """
+    buf = list(initial)
     curses.noecho()
-    curses.curs_set(0)
-    return raw.decode("utf-8", errors="replace").strip()
+    try:
+        curses.curs_set(1)
+    except curses.error:
+        pass
+    max_y, max_x = _term_size(stdscr)
+    width = max(1, min(width, max_x - col - 1))
+
+    def _redraw():
+        shown = "".join(buf)[-width:]
+        try:
+            stdscr.move(row, col)
+            stdscr.clrtoeol()
+            if shown:
+                stdscr.addstr(row, col, shown)
+            stdscr.move(row, col + len(shown))
+        except curses.error:
+            pass
+        stdscr.refresh()
+
+    try:
+        _redraw()
+        while True:
+            key = stdscr.getch()
+            if key == -1:
+                continue
+            if key == 27:
+                action = _read_escape(stdscr)
+                if action == "CANCEL":
+                    return None
+            else:
+                action = translate_key(key)
+            if action is None or action in _ARROW_KEYS:
+                continue
+            if action == "ENTER":
+                return "".join(buf)
+            if action == "BACKSPACE":
+                if buf:
+                    buf.pop()
+            elif len(buf) < 512:
+                buf.append(action)
+            _redraw()
+    finally:
+        try:
+            curses.curs_set(0)
+        except curses.error:
+            pass
+
+
+def _read_field(stdscr, row, col, width=56):
+    value = read_line(stdscr, row, col, width)
+    return "" if value is None else value.strip()
 
 
 def _infer_field_choices(field: dict) -> list[str] | None:
@@ -228,10 +389,10 @@ def _pick_choice_field(stdscr, start_row: int, field: dict) -> str | None:
             _safe_addstr(stdscr, row, 4, f"{prefix}{choice}", attr)
         stdscr.refresh()
 
-        key = stdscr.getch()
+        key = get_menu_key(stdscr)
         if key in (ord("q"), ord("Q"), 27):
             return None
-        if key in (10, 13):
+        if key in ENTER_KEYS:
             return choices[current]
         if key in (curses.KEY_LEFT, curses.KEY_UP):
             current = (current - 1) % len(choices)
@@ -298,7 +459,7 @@ def show_entry_form(stdscr, title, subtitle, fields, instructions=None):
         _safe_addstr(stdscr, row, 2, "ENTER = run with defaults | type q + ENTER = cancel", curses.A_DIM)
         row += 2
         _safe_addstr(stdscr, row, 2, "> ")
-        value = _read_field(stdscr, row, 4, width=8)
+        value = _read_field(stdscr, row, 2 + len("> "), width=8)
         if value.strip().lower() in {"q", "quit", "cancel"}:
             return None
         return {}
@@ -321,7 +482,7 @@ def show_entry_form(stdscr, title, subtitle, fields, instructions=None):
             _safe_addstr(stdscr, row, 4, hint[: max(1, max_x - 6)], curses.A_DIM)
             row += 2
 
-        if field.get("key") == "n_points" or field.get("type") == "choice":
+        if field.get("key") == "n_points":
             picked = select_n_interactive(
                 stdscr,
                 prompt=str(label),
@@ -337,8 +498,9 @@ def show_entry_form(stdscr, title, subtitle, fields, instructions=None):
         else:
             _safe_addstr(stdscr, row, 2, "Blank = default. Required empty = cancel.", curses.A_DIM)
             row += 1
-            _safe_addstr(stdscr, row, 4, f"[{default}] " if default else "> ")
-            value = _read_field(stdscr, row, 6 if default else 4)
+            prompt = f"[{default}] " if default else "> "
+            _safe_addstr(stdscr, row, 4, prompt)
+            value = _read_field(stdscr, row, 4 + len(prompt))
             if not value:
                 value = field.get("default", "")
             if field.get("required") and not value:
