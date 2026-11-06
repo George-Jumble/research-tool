@@ -4,7 +4,7 @@ from sb_engine.casimir import casimir_curve, shape_battery
 from sb_engine.glueball import ledger_snapshot, m_0pp_th, packed_0mp
 from sb_engine.cms import run_cms
 from sb_engine.sparc import emergent_dm, run_sparc
-from sb_engine.sound_horizon import calibrate_gamma, sound_horizon
+from sb_engine.sound_horizon import rd_aubourg2015, sound_horizon
 from sb_engine.constants import (
     CORPUS_DATE,
     DELTA_N_PLASMA,
@@ -35,7 +35,6 @@ __all__ = [
     "RD_OBSERVED_MPC",
     "V_ORB",
     "Z0_OHM",
-    "calibrate_gamma",
     "casimir_curve",
     "emergent_dm",
     "ledger_snapshot",
@@ -45,4 +44,5 @@ __all__ = [
     "run_sparc",
     "shape_battery",
     "sound_horizon",
+    "rd_aubourg2015",
 ]

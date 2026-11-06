@@ -8,7 +8,7 @@ After a standard 3+1D ΛCDM (or Newtonian SPARC) reduction, do the residuals mat
 
 These are not scored on the default path:
 
-- Does the data show a 7-fold Tav / KK / 5D signature?
+- Does the data show a 7-fold / KK / 5D signature?
 - Is there a compact S¹ of radius 7 h⁻¹ Mpc?
 - Is 142857 a search target?
 - Is Resonance Graph Core a cosmological backend?
@@ -27,7 +27,6 @@ The bounce stays in original TSB/CCC form: conformal aeon crossover plus Mirron 
 | σ | Reported uncertainty on D |
 | χ²_SB | Fit of r to S_k in 3+1D only. Numeric kernel is TODO where not yet geometry-coded |
 | χ²_Λ | Fit of D to B |
-| T_τ | Any Tau / Tav / KK / 5D template. Retired. Not evaluated |
 | N | Number of residual bins |
 | Δ | Dipole residual after CMB-frame subtraction |
 | V_orb | Domain orbital-velocity eigenvalue from an E₈ projection |
@@ -50,7 +49,7 @@ The bounce stays in original TSB/CCC form: conformal aeon crossover plus Mirron 
 
 1. Load with the existing loader when one is available (DESI Cobaya table, SPARC CSV).
 2. Subtract the conventional baseline when the table already carries it (SPARC: quadrature sum of V_gas, V_disk, V_bul).
-3. Score r only against S_k. If the numeric kernel is not implemented, the verdict is **inconclusive** and the kernel field is `TODO`. No Tau stand-in is called.
-4. The report states residual amplitude and scale, the template letter, the verdict, and the negative control: **Tau/5D templates were not applied**.
+3. Score r only against S_k. If the numeric kernel is not implemented, the verdict is **inconclusive** and the kernel field is `TODO`. No extra-dimension stand-in is called.
+4. The report states residual amplitude and scale, the template letter, the verdict, and the verdict.
 
-Boot config: `config/superblock_only.json`. `tau_templates_enabled()` always returns false.
+Boot config: `config/superblock_only.json`.

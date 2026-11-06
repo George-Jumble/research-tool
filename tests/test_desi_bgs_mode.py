@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
-from menus.astronomical.desi.scanner import (
+from menus.astronomical.desi.fetcher import DEFAULT_COBAYA_ROOT
+from menus.astronomical.desi.loader import (
     DATA_MODE_ANISOTROPIC,
     DATA_MODE_DH_ONLY,
     DATA_MODE_DV_ONLY,
@@ -13,6 +15,14 @@ from menus.astronomical.desi.scanner import (
     inventory_tracer_quantities,
     load_scan_data_by_data_mode,
     resolve_data_mode_for_tracer,
+)
+
+_NEEDS_DR2 = pytest.mark.skipif(
+    not DEFAULT_COBAYA_ROOT.is_dir(),
+    reason=(
+        "DESI DR2 tables not cached; fetch with the repo convention: git clone "
+        "https://github.com/CobayaSampler/bao_data.git datasets/desi/bao_data"
+    ),
 )
 
 BGS = "BGS_BRIGHT-21.35_GCcomb"
@@ -25,11 +35,13 @@ ANISO_TRACERS = (
 )
 
 
+@_NEEDS_DR2
 def test_inventory_bgs_is_dv_only():
     avail = inventory_tracer_quantities(None, BGS)
     assert avail == ["DV_over_rs"]
 
 
+@_NEEDS_DR2
 def test_bgs_dh_only_falls_back_to_dv():
     chosen = resolve_data_mode_for_tracer("DH_only", BGS, ["DV_over_rs"])
     assert chosen == DATA_MODE_DV_ONLY
@@ -45,6 +57,7 @@ def test_bgs_dh_only_falls_back_to_dv():
     assert data["quantity"] == ["DV_over_rs"]
 
 
+@_NEEDS_DR2
 def test_lrg_dh_only_keeps_dh():
     y, _cov, _s, meta = get_data_by_mode("DH_only", LRG_LO)
     assert meta["data_mode"] == DATA_MODE_DH_ONLY
@@ -52,6 +65,7 @@ def test_lrg_dh_only_keeps_dh():
     assert int(meta["n_data"]) >= 1
 
 
+@_NEEDS_DR2
 def test_qso_lya_elg_lrg_elg_default_anisotropic():
     for tracer in ANISO_TRACERS:
         _y, _cov, _s, meta = get_data_by_mode(None, tracer)

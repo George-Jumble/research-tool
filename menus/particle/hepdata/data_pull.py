@@ -9,8 +9,8 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 
-from tav_shared import hepdata_engine, mcmc_engine, require_topology
-from tav_research.data_pull_common import COMMON_BATCH_HINT, standard_entry_fields
+from sb_shared import hepdata_engine, mcmc_engine, require_topology
+from sb_research.data_pull_common import COMMON_BATCH_HINT, standard_entry_fields
 
 MENU_LABEL = "HEPData (Numerical Correlation)"
 

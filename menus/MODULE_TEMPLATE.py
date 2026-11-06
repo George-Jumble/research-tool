@@ -1,16 +1,16 @@
 """
-MODULE_TEMPLATE — copy this folder to create a new Tav-Superblock submenu.
+MODULE_TEMPLATE — copy this folder to create a new Superblock submenu.
 
 Steps
 -----
 1. Copy ``menus/MODULE_TEMPLATE/`` to ``menus/<domain>/<your_submenu>/``
 2. Rename ``extension.py`` constants (MODULE_TAG, SUBMENU_TITLE, MENU_ACTIONS)
 3. Implement ``run_action``, ``entry_fields``, ``entry_instructions``
-4. Register in ``tav_research/registry.py`` (import + MODULE_EXTENSIONS)
-5. Add the submenu title to ``tav_research/menu_tree.py`` under the right domain
+4. Register in ``sb_research/registry.py`` (import + MODULE_EXTENSIONS)
+5. Add the submenu title to ``sb_research/menu_tree.py`` under the right domain
 6. Run ``./venv/bin/python menus/_layout.py`` or ``ensure_menu_folders()`` to verify paths
 
-Global utilities live in ``tav_shared/``.  Curses UI lives in ``tav_research/``.
+Global utilities live in ``sb_shared/``.  Curses UI lives in ``sb_research/``.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Shared analysis base classes for Tau-Superblock workflows."""
+"""Shared analysis base classes for Superblock workflows."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class BaseAnalysis:
             logger.error("Test %s failed: n=%s < 8", tracer_name, n_rows)
             raise ValueError("Statistical power insufficient for periodogram.")
 
-        return self._compute_tav_resonance(data)
+        return self._compute_resonance(data)
 
     @staticmethod
     def _effective_sample_size(data: Any) -> int:
@@ -51,5 +51,5 @@ class BaseAnalysis:
             except Exception:
                 return 0
 
-    def _compute_tav_resonance(self, data: Any) -> Any:
-        raise NotImplementedError("Subclasses must implement _compute_tav_resonance")
+    def _compute_resonance(self, data: Any) -> Any:
+        raise NotImplementedError("Subclasses must implement _compute_resonance")

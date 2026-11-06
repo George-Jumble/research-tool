@@ -1,0 +1,185 @@
+"""
+Capture terminal text from research-tool runs into artifacts/*.txt logs.
+"""
+
+from __future__ import annotations
+
+import sys
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, Iterator, Optional
+
+from sb_shared.artifact_paths import TestSlug, artifact_path, compose_dataset_slug
+from sb_shared.project_paths import ARTIFACTS_ROOT
+from sb_research.external_editor import build_session_output_file, open_in_external_editor
+
+ARTIFACTS_DIR = ARTIFACTS_ROOT
+
+
+class _TeeStream:
+    """Write stdout to terminal and a log file simultaneously."""
+
+    def __init__(self, terminal, log_file, mirror_file=None):
+        self.terminal = terminal
+        self.log_file = log_file
+        self.mirror_file = mirror_file
+
+    def write(self, data: str) -> int:
+        if not data:
+            return 0
+        self.terminal.write(data)
+        self.log_file.write(data)
+        if self.mirror_file is not None:
+            self.mirror_file.write(data)
+        return len(data)
+
+    def flush(self) -> None:
+        self.terminal.flush()
+        self.log_file.flush()
+        if self.mirror_file is not None:
+            self.mirror_file.flush()
+
+    def isatty(self) -> bool:
+        return self.terminal.isatty()
+
+
+def _slugify(text: str) -> str:
+    clean = "".join(ch if ch.isalnum() else "_" for ch in text.lower())
+    while "__" in clean:
+        clean = clean.replace("__", "_")
+    return clean.strip("_")[:48] or "run"
+
+
+def build_test_output_path(
+    test_name: str,
+    *,
+    output_dir: Path | str | None = None,
+    when: datetime | None = None,
+    dataset: str = "run_log",
+) -> Path:
+    """
+    Build a canonical run log path under ``artifacts/run_logs/``.
+
+    Filename: ``{test}__{dataset}__stdout__{MM-DD-YYYY}_{HHMMSS}.out``
+    """
+    del output_dir  # legacy param — logs always use TestSlug.RUN_LOG
+    slug = _slugify(test_name)
+    return artifact_path(TestSlug.RUN_LOG, dataset, f"{slug}_stdout", "out", when=when)
+
+
+def write_test_output(
+    test_name: str,
+    content: str,
+    *,
+    output_dir: Path | str = ARTIFACTS_DIR,
+    when: datetime | None = None,
+    append: bool = False,
+) -> Path:
+    """Write text to ``{test_name}.out.{date}.out`` and return the path."""
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = build_test_output_path(test_name, output_dir=out_dir, when=when)
+    mode = "a" if append else "w"
+    with path.open(mode, encoding="utf-8") as handle:
+        handle.write(content)
+        if append and content and not content.endswith("\n"):
+            handle.write("\n")
+    return path
+
+
+def build_log_path(
+    module_tag: str,
+    action: str,
+    artifacts_dir: Path | str = ARTIFACTS_DIR,
+) -> Path:
+    test_name = f"{module_tag}_{action}" if module_tag else action
+    return build_test_output_path(test_name, output_dir=artifacts_dir)
+
+
+def parse_show_graphics(options: Optional[dict], default: str = "artifacts") -> bool:
+    """
+    Return True for interactive Tk pop-ups, False for artifacts-only PNG saves.
+
+    Accepted popup values: popup, tk, window, show, yes, interactive
+    Accepted artifacts values: artifacts, save, file, no, later
+    """
+    raw = (options or {}).get("show_graphics", default)
+    mode = str(raw).strip().lower()
+    if mode in {"popup", "tk", "window", "show", "yes", "y", "interactive", "live"}:
+        return True
+    if mode in {"artifacts", "save", "file", "no", "n", "later", "disk", "offline"}:
+        return False
+    return default.strip().lower() in {"popup", "tk", "show", "yes", "interactive"}
+
+
+def parse_batch_limit(options: Optional[dict], default: int = 0) -> int:
+    """0 means no limit (process all local CSV files)."""
+    raw = (options or {}).get("batch_limit", "")
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        return default
+    return max(0, value)
+
+
+@contextmanager
+def capture_run_log(
+    module_tag: str,
+    action: str,
+    options: Optional[dict] = None,
+    artifacts_dir: Path | str = ARTIFACTS_DIR,
+) -> Iterator[Path]:
+    """
+    Tee stdout to artifacts/{test_name}.out.{date}.out for the run duration.
+    """
+    out_dir = Path(artifacts_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_path = build_log_path(module_tag, action, artifacts_dir=out_dir)
+
+    header_lines = [
+        "=== SUPERBLOCK RUN LOG ===",
+        f"Module: {module_tag}",
+        f"Action: {action}",
+        f"Started: {datetime.now(timezone.utc).isoformat(timespec='seconds')} UTC",
+        f"Log file: {log_path}",
+    ]
+    if options:
+        header_lines.append("Options:")
+        for key, value in sorted(options.items()):
+            if str(value).strip():
+                header_lines.append(f"  {key}: {value}")
+    header_lines.append("=" * 40)
+    header_lines.append("")
+
+    session_out_dir = ARTIFACTS_ROOT.parent / "session_out"
+    output_file = build_session_output_file(session_out_dir)
+
+    with log_path.open("w", encoding="utf-8") as handle, output_file.open("w", encoding="utf-8") as mirror:
+        handle.write("\n".join(header_lines) + "\n")
+        handle.flush()
+        tee = _TeeStream(sys.stdout, handle, mirror)
+        previous = sys.stdout
+        sys.stdout = tee
+        try:
+            yield log_path
+        finally:
+            sys.stdout = previous
+            footer = (
+                f"\n{'=' * 40}\n"
+                f"Finished: {datetime.now(timezone.utc).isoformat(timespec='seconds')} UTC\n"
+            )
+            handle.write(footer)
+            handle.flush()
+            test_label = f"{module_tag}_{action}" if module_tag else action
+            print(f"[Superblock Residual Engine] Test output saved: {log_path}")
+            print(f"[Superblock Residual Engine] Test: {test_label}")
+            print(f"[Superblock Residual Engine] Session output file: {output_file}")
+            opened = open_in_external_editor(output_file)
+            if not opened:
+                print(
+                    "[Superblock Residual Engine] Could not open session output with the configured editor. "
+                    "Use 'Choose Outside Editor' in the root menu to update it."
+                )

@@ -4,7 +4,8 @@ Enable SSH / SFTP / rsync Remote Archive Sync
 Remote SSH host updates are DISABLED in code (July 2026). The research tool
 still stages finished datasets locally under:
 
-  scripts/research_tool/.tav_project_staging/
+  scripts/research_tool/.sb_project_staging/
+  (an existing legacy .tav_project_staging/ is reused in place if present)
     finishedA/   — SPARC, FRB CSV archives
     finished2/   — Planck / integrator FITS
     finished/    — general finished exports
@@ -15,13 +16,13 @@ the files below (search for "disabled" or "Remote SSH").
 
 1) Research tool — primary switch
 ---------------------------------
-File: scripts/research_tool/tav_shared/tav_project_paths.py
+File: scripts/research_tool/sb_shared/project_paths.py
 
   a) remote_transfer_enabled()
-     Uncomment the os.environ.get("TAV_REMOTE_TRANSFER", ...) return.
+     Uncomment the os.environ.get("SB_REMOTE_TRANSFER", ...) return.
      Remove or comment out the hard-coded `return False`.
 
-  b) ensure_tav_project_dirs()
+  b) ensure_project_dirs()
      Uncomment the block that calls rt.sftp_mkdir_p() for finishedA/finished2/finished.
 
   c) push_to_remote_public()
@@ -77,14 +78,16 @@ File: scripts/sync_archive.sh
 
 5) Environment variables (required when enabled)
 ----------------------------------------------
-Set before running the research tool, gateway /sync, or sync_archive:
+Set before running the research tool, gateway /sync, or sync_archive.
+The TAV_* names below are read by the external Research/scripts/remote_transfer.py
+(not part of this repo) and are left unchanged; only the in-repo switch is SB_REMOTE_TRANSFER.
 
   export TAV_REMOTE_USER="<ssh_user>"
   export TAV_REMOTE_HOST="<host_or_ip>"
   export TAV_REMOTE_PUBLIC="<remote_public_root>"          # e.g. /home/user/Public
   export TAV_REMOTE_TAV_PROJECT="<remote>/ProtonDrive/tav_project"
   export TAV_REMOTE_TSB_SYNC="<remote_public>/tsb_sync"
-  export TAV_REMOTE_TRANSFER=1
+  export SB_REMOTE_TRANSFER=1
 
 Optional:
   export TAV_SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=15"
@@ -108,15 +111,15 @@ look for log lines:
 
 7) Call sites (no edits needed if sections 1–4 are restored)
 ------------------------------------------------------------
-These import tav_project_paths helpers automatically:
+These import project_paths helpers automatically:
   - menus/particle/cern/fetcher.py
   - menus/astronomical/sparc/fetcher.py
   - menus/astronomical/frb/fetcher.py
   - menus/integrator/fetcher.py
-  - menus/planck_cmb/tav.py
+  - menus/planck_cmb/fetcher.py
   - menus/gravitic/ligo/fetcher.py
   - menus/gravitic/lisa/fetcher.py
-  - tav_shared/dataset_registry.py
+  - sb_shared/dataset_registry.py
 
 Gateway entry:
   - scripts/gateway.py  →  _cmd_sync()  →  sync_archive.run_sync()

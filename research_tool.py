@@ -3,7 +3,7 @@
 Superblock Research Tool — thin entry point.
 
 Each submenu lives in its own ``*_extension.py`` module.  Shared curses UI,
-menu tree, and run orchestration live under ``tav_research/``.
+menu tree, and run orchestration live under ``sb_research/``.
 
 Run:  ./venv/bin/python research_tool.py
 
@@ -14,7 +14,7 @@ Post-run review: set **AI verbose review = yes** on any module entry form.
 
 from __future__ import annotations
 
-# tav_research is not imported at module load. The curses UI imports it only
+# sb_research is not imported at module load. The curses UI imports it only
 # when this file is executed with no engine subcommand.
 
 _ENGINE_COMMANDS = (
@@ -30,8 +30,8 @@ _ENGINE_COMMANDS = (
 
 
 def __getattr__(name: str):
-    """Lazy curses re-exports. Importing this module does not load tav_research."""
-    from tav_research import curses_shell, n_selector, registry
+    """Lazy curses re-exports. Importing this module does not load sb_research."""
+    from sb_research import curses_shell, n_selector, registry
 
     table = {
         "ROOT_TITLE": curses_shell.ROOT_TITLE,
@@ -89,22 +89,7 @@ if __name__ == "__main__":
     argv = sys.argv[1:]
     if argv and argv[0] in _ENGINE_COMMANDS:
         raise SystemExit(_missing_engine(argv[0]))
-    if "--lock-blind" in argv:
-        from menus.particle.casimir.blind_mode import lock_blind_results
-
-        lock_blind_results()
-        raise SystemExit(0)
-    if "--compare-blind" in argv:
-        from menus.particle.casimir.blind_mode import write_blind_comparison_table
-
-        write_blind_comparison_table()
-        raise SystemExit(0)
-    if "--blind" in argv:
-        from menus.particle.casimir.blind_mode import set_blind
-
-        set_blind(True)
-        sys.argv = [sys.argv[0]] + [a for a in argv if a != "--blind"]
-    from tav_research.runner import load_api_keys, main
+    from sb_research.runner import load_api_keys, main
 
     load_api_keys()
     main()

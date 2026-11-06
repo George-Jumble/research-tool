@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-3D Cosmic Web Simulation with Tav-Superblock Physics
+3D Cosmic Web Simulation with Superblock Physics
 ===================================================
 
 Interactive 3D visualization of the cosmic web incorporating:
@@ -9,7 +9,7 @@ Interactive 3D visualization of the cosmic web incorporating:
 - Base filament layer + highlighted choke lines (1D hot threads)
 - Blue void haze in low-density regions
 - Field galaxies scattered for texture
-- Tav-Superblock choking, DM decoupling, and topological friction
+- Superblock choking, DM decoupling, and topological friction
 
 Run:
     python webSim.py
@@ -20,7 +20,7 @@ from __future__ import annotations
 import numpy as np
 import plotly.graph_objects as go
 
-from tav_shared.cosmic_web_style import (
+from sb_shared.cosmic_web_style import (
     BLUE_WEB,
     CHOKE_HIGHLIGHT_THRESHOLD,
     CHOKE_VISUAL_THRESHOLD,
@@ -41,7 +41,7 @@ from tav_shared.cosmic_web_style import (
 )
 
 # ============================================================
-# TAV-SUPERBLOCK PHYSICS
+# SUPERBLOCK PHYSICS
 # ============================================================
 
 
@@ -309,7 +309,7 @@ def create_3d_cosmic_web():
 
     node_links = [(f["start"], f["end"]) for f in filaments]
 
-    # --- τ-hex ring on every cluster node (centered on the well) ---
+    # --- hex ring on every cluster node (centered on the well) ---
     add_cluster_hex_rings(
         fig,
         major_nodes,
@@ -345,7 +345,7 @@ def create_3d_cosmic_web():
 
     apply_exhaustion_layout(
         fig,
-        "Tav-Superblock 3D Cosmic Web",
+        "Superblock 3D Cosmic Web",
         "7 h⁻¹ Mpc Conformal Exhaustion • Local Gravity Wells • 142857 Resonance Choking",
         camera=dict(eye=dict(x=1.6, y=1.6, z=1.1)),
     )
@@ -355,7 +355,7 @@ def create_3d_cosmic_web():
             "<b>Conformal Exhaustion Palette</b><br>"
             f"<span style='color:{CYAN_GLOW}'>Cyan glow</span> = conformal gravity wells<br>"
             f"<span style='color:{BLUE_WEB}'>Blue web</span> = 3D-supported cool filaments<br>"
-            f"<span style='color:{RESONANCE_RED}'>Magenta-red</span> = τ-hex per node + inter-node force lines<br>"
+            f"<span style='color:{RESONANCE_RED}'>Magenta-red</span> = hex ring per node + inter-node force lines<br>"
             f"<span style='color:{RESONANCE_RED}'>Bright red</span> = choke threads (≥ {CHOKE_VISUAL_THRESHOLD})<br>"
             f"<span style='color:{TEXT_MUTED}'>Blue mist</span> = void regions"
         ),
@@ -390,7 +390,7 @@ def create_3d_cosmic_web():
 
 
 if __name__ == "__main__":
-    print("Generating Tav-Superblock 3D Cosmic Web simulation...")
+    print("Generating Superblock 3D Cosmic Web simulation...")
     fig = create_3d_cosmic_web()
     fig.show()
     print(

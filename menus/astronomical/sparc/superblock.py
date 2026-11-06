@@ -15,7 +15,6 @@ Extensions implemented (as requested):
    plus clear integration example with the empirical tests pipeline.
 
 This module is designed to work alongside:
-- `tav_superblock_prime_past_harmonic.py`
 - `superblock_empirical_tests.py`
 """
 
@@ -454,7 +453,6 @@ def example_integration_with_empirical_tests():
 # In your empirical tests script or notebook:
 
 from menus.astronomical.sparc.superblock import SPARCData
-# from menus.prime_past.harmonic import TavSuperblockPrimePastHarmonic
 
 sparc = SPARCData(data_dir="./data/sparc")
 sparc.download_data()

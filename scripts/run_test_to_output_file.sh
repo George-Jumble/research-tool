@@ -33,7 +33,7 @@ echo "$output_file"
 
 "$PYTHON_BIN" - <<'PY' "$output_file"
 import sys
-from tav_research.external_editor import open_in_external_editor
+from sb_research.external_editor import open_in_external_editor
 
 path = sys.argv[1]
 if not open_in_external_editor(path):

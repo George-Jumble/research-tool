@@ -53,6 +53,8 @@ batch_data.txt
 ignore.txt
 cache/
 session_out/
+.sb_project_staging/
+# legacy staging dir (pre-rename); still holds existing archives
 .tav_project_staging/
 
 # IDE / OS

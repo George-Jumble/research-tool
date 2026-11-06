@@ -39,7 +39,7 @@ def calculate_dm_ratio_energy_split(temperature):
     Same Boltzmann weights as :func:`calculate_dm_ratio`, but do not book the
     full hidden-sector sum as bound DM. Continuum thermal reservoir is E_u.
     """
-    from tav_shared.bound_unbound_energy import partition_energy
+    from sb_shared.bound_unbound_energy import partition_energy
 
     probabilities = np.exp(-beta_sq / temperature)
     effective_gamma = gamma * probabilities * v_factors
@@ -51,7 +51,7 @@ def calculate_dm_ratio_energy_split(temperature):
         e_free=None,
         e_th=None,
         is_discrete_harmonic=None,
-        tau_bind_ok=None,
+        bind_ok=None,
         from_total_aggregator=True,
         ledger="content",
     )

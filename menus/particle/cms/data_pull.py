@@ -7,8 +7,8 @@ from typing import Any
 
 from menus.particle.cern.fetcher import DATASETS_DIR, list_cached_targets
 from menus.particle.cern.manifest import CERN_MANIFEST
-from tav_research.data_pull_common import COMMON_BATCH_HINT
-from tav_shared.llm_analysis import append_llm_entry_fields
+from sb_research.data_pull_common import COMMON_BATCH_HINT
+from sb_shared.llm_analysis import append_llm_entry_fields
 
 MENU_LABEL = "CMS Open Data (NanoAOD / Electrons)"
 
@@ -188,17 +188,14 @@ def entry_fields() -> list[dict]:
 
 
 def fetch_and_graph(query: str, params: dict[str, Any] | None = None) -> None:
-    from menus.particle.cern.analyzer import run_analysis
+    """Fetch/cache the CMS target, then score it with the Superblock residual engine."""
     from menus.particle.cern.fetcher import ensure_cern_target, resolve_root_path
     from menus.particle.cern.manifest import resolve_target_key
+    from superblock_residual import run_superblock_residual
 
     params = params or {}
     q = resolve_cms_open_data_query(query)
     force = str(params.get("force_refresh", "no")).lower() in {"yes", "y", "true", "1"}
-    try:
-        entry_stop = int(params.get("entry_stop") or 50000)
-    except ValueError:
-        entry_stop = 50000
 
     key = resolve_target_key(q)
     if key and resolve_root_path(key) is None:
@@ -209,10 +206,4 @@ def fetch_and_graph(query: str, params: dict[str, Any] | None = None) -> None:
         q = key
 
     print(f"[Superblock Residual Engine] CMS dataset resolved: {q}")
-    report = run_analysis(
-        q,
-        analysis="cms_nanoaod",
-        entry_stop=entry_stop,
-        output_prefix="cms_open_data",
-    )
-    print(f"[Superblock Residual Engine] CMS Open Data report: {report.get('report_path')}")
+    run_superblock_residual("CERN_OPENDATA", "CMS Open Data", {**params, "target": q})

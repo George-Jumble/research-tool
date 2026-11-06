@@ -23,16 +23,16 @@ from menus.particle.atlas.manifest import (
     DEFAULT_RELEASE,
     resolve_target_key,
 )
-from tav_shared.dataset_ledger import mark_processed
-from tav_shared.tav_project_paths import (
+from sb_shared.dataset_ledger import mark_processed
+from sb_shared.project_paths import (
     FINISHED_A_DIR,
-    ensure_tav_project_dirs,
+    ensure_project_dirs,
     finished_a_search_dirs,
     move_to_finished_archive,
 )
-from tav_shared.tav_project_paths import TAU_SUPERBLOCK_ROOT
+from sb_shared.project_paths import SUPERBLOCK_ROOT
 
-DATASETS_DIR = TAU_SUPERBLOCK_ROOT / "datasets" / "atlas"
+DATASETS_DIR = SUPERBLOCK_ROOT / "datasets" / "atlas"
 DONE_FILE = DATASETS_DIR / "done.txt"
 TARGET_PREFIX = "atlas:"
 
@@ -50,7 +50,7 @@ class PullSummary:
 
 def ensure_dirs() -> None:
     DATASETS_DIR.mkdir(parents=True, exist_ok=True)
-    ensure_tav_project_dirs()
+    ensure_project_dirs()
 
 
 def _ledger_key(target_key: str) -> str:
@@ -410,7 +410,7 @@ def pull_open_archives(
 
 
 def archive_used_datasets(paths: list[Path]) -> list[Path]:
-    ensure_tav_project_dirs()
+    ensure_project_dirs()
     moved: list[Path] = []
     for src in paths:
         if not src.exists():

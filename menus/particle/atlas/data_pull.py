@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from menus.particle.atlas.manifest import ATLAS_MANIFEST, DEFAULT_PROTOCOL, DEFAULT_RELEASE
-from tav_research.data_pull_common import COMMON_BATCH_HINT
-from tav_shared.llm_analysis import append_llm_entry_fields
+from sb_research.data_pull_common import COMMON_BATCH_HINT
+from sb_shared.llm_analysis import append_llm_entry_fields
 
 MENU_LABEL = "ATLAS Open Data (Lepton/Photon Tracks)"
 
@@ -119,7 +119,7 @@ def entry_instructions() -> list[str]:
         "Remote catalog: atlasopenmagic (set_release + get_urls protocol=https|root).",
         f"Default release: {DEFAULT_RELEASE}; education 2lep/4lep skims for lepton scans.",
         "Deps: atlasopenmagic, cernopendata-client, fsspec-xrootd (optional root://).",
-        "Analysis: ATLAS mini-tree → shared Tav 7-fold lepton engine.",
+        "Analysis: scored by the Superblock residual engine (CERN_OPENDATA).",
         COMMON_BATCH_HINT,
     ]
     if targets:
@@ -216,28 +216,15 @@ def entry_fields() -> list[dict]:
 
 
 def fetch_and_graph(query: str, params: dict[str, Any] | None = None) -> None:
-    from menus.particle.atlas.analyzer import tav_analyze_atlas_leptons_from_file
-    from menus.particle.atlas.fetcher import (
-        ensure_atlas_target,
-        is_atlas_mini_root,
-        resolve_root_path,
-    )
+    """Fetch/cache the ATLAS target, then score it with the Superblock residual engine."""
+    from menus.particle.atlas.fetcher import ensure_atlas_target, resolve_root_path
     from menus.particle.atlas.manifest import resolve_target_key
-    from menus.particle.cern.tav_superblock_cms_lepton_analyzer_v2 import (
-        tav_analyze_leptons_from_file,
-    )
+    from superblock_residual import run_superblock_residual
 
     params = params or {}
     q = resolve_atlas_open_data_query(query)
     force = str(params.get("force_refresh", "no")).lower() in {"yes", "y", "true", "1"}
     protocol = (params.get("protocol") or DEFAULT_PROTOCOL).strip() or DEFAULT_PROTOCOL
-    lepton = (params.get("lepton") or "both").strip() or "both"
-    try:
-        entry_stop = int(params.get("entry_stop") or 50000)
-    except ValueError:
-        entry_stop = 50000
-    if entry_stop <= 0:
-        entry_stop = None
 
     key = resolve_target_key(q)
     if key and resolve_root_path(key) is None:
@@ -245,39 +232,10 @@ def fetch_and_graph(query: str, params: dict[str, Any] | None = None) -> None:
         ensure_atlas_target(key, force_refresh=force, auto_fetch=True, protocol=protocol)
 
     root = resolve_root_path(key or q) or resolve_root_path(q)
-    if root is None and key:
-        root = resolve_root_path(key)
     if root is None:
         print(f"[Superblock Residual Engine] ATLAS dataset not resolved: {q!r}")
         print("  Run with a cached path or manifest key (atlas_2lep_data_A).")
         return
 
     print(f"[Superblock Residual Engine] ATLAS dataset resolved: {root}")
-    if is_atlas_mini_root(root):
-        report = tav_analyze_atlas_leptons_from_file(
-            root,
-            output_dir="atlas_open_data",
-            entry_stop=entry_stop,
-            lepton=lepton,
-            save_plots=True,
-            verbose=True,
-        )
-    else:
-        # Fallback: CMS-style NanoAOD lepton path if a CMS file was selected by path
-        print("[Superblock Residual Engine] File is not ATLAS mini — routing to CMS lepton analyzer.")
-        report = tav_analyze_leptons_from_file(
-            root,
-            output_dir="atlas_open_data_cms_fallback",
-            entry_stop=entry_stop,
-            lepton="Muon" if lepton in {"muon", "mu"} else "Electron",
-            save_plots=True,
-            verbose=True,
-        )
-
-    print(f"[Superblock Residual Engine] ATLAS Open Data report: {report.get('report_path')}")
-    sp = report.get("seven_periodic") or {}
-    if sp.get("significance_sigma") is not None:
-        print(
-            f"[Superblock Residual Engine] Engine score σ: {sp['significance_sigma']:.2f} "
-            f"({sp.get('interpretation_label') or 'internal score'})"
-        )
+    run_superblock_residual("CERN_OPENDATA", "ATLAS Open Data", {**params, "target": str(root)})

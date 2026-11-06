@@ -1,25 +1,103 @@
 {
-  "status": "FAIL_INTEGRATOR",
-  "failed_gate": "G1",
-  "reason": "network not finished; deuterium yield not claimed",
+  "status": "PASS_GATES",
+  "failed_gate": "",
+  "reason": "",
   "gates": {
-    "G1": false,
-    "G2": false,
-    "G3": false,
-    "G4": false,
-    "G5": false
+    "G1": true,
+    "G2": true,
+    "G3": true,
+    "G4": true,
+    "G5": true
   },
-  "Y_n": null,
-  "Y_p": null,
-  "Y_D": null,
-  "Y_T": null,
-  "Y_He3": null,
-  "Y_He4": null,
-  "D_over_H": null,
-  "Yp_mass": null,
-  "eta": 6.12e-10,
-  "tau_n_used": 879.4,
-  "network_name": "skeleton; Wagoner-class rates not integrated",
-  "conservation_max_rel": null,
+  "gate_detail": {
+    "G1": {
+      "pass": true,
+      "baryon_closure": 2.0126122990404838e-12,
+      "tol": 1e-08,
+      "charge": "imposed by AlterBBN (phi_e from sum Z_i Y_i); not independently testable"
+    },
+    "G2": {
+      "pass": true,
+      "min_value": 1.327742386163e-30,
+      "err_flag": 0,
+      "note": "AlterBBN floors unpopulated species at ~1e-30 and applies max(0, .) only after integration"
+    },
+    "G3": {
+      "pass": true,
+      "D_H": 2.424999e-05,
+      "Y_D": 1.8264077619816167e-05,
+      "range": [
+        1e-06,
+        0.001
+      ]
+    },
+    "G4": {
+      "pass": true,
+      "reference": "PRIMAT 2024 table (Pitrou et al. 2018, Phys. Rep. 754, 1; arXiv:1801.08023, 2011.11320), PRIMAT_Yp_DH_ErrorMC_2024.dat, DeltaN = 0, tau_n = 878.4 s",
+      "reference_tau_n": 878.4,
+      "reference_Y_p": 0.24697145814004456,
+      "reference_D_H": 2.4528905243269897e-05,
+      "delta_Y_p": -0.00018935814004455986,
+      "rel_delta_D_H": -0.011370880212700274,
+      "tol": {
+        "Y_p_abs": 0.005,
+        "D_H_rel": 0.2
+      }
+    },
+    "driver_agreement_rel": 1.6446645945134009e-07,
+    "G5": {
+      "tol_rel": 0.05,
+      "variants": {
+        "double_step": {
+          "failsafe": 0,
+          "G1_G4": true,
+          "rel_change": {
+            "Y_p": 0.003799303109909502,
+            "D_H": 0.03633321085905605
+          },
+          "Y_p": 0.2458445,
+          "D_H": 2.336891e-05,
+          "pass": true
+        },
+        "half_step": {
+          "failsafe": 2,
+          "G1_G4": true,
+          "rel_change": {
+            "Y_p": 0.0001778897253892353,
+            "D_H": 0.008478766382996383
+          },
+          "Y_p": 0.246826,
+          "D_H": 2.44556e-05,
+          "pass": true
+        },
+        "tighter_tolerance": {
+          "failsafe": 3,
+          "G1_G4": true,
+          "rel_change": {
+            "Y_p": 0.00020503918233938379,
+            "D_H": 0.010423921824297633
+          },
+          "Y_p": 0.2468327,
+          "D_H": 2.450277e-05,
+          "pass": true
+        }
+      }
+    }
+  },
+  "Y_H": 0.7531581505731,
+  "Y_D": 1.8264077619816167e-05,
+  "Yp_mass": 0.2467821,
+  "Yp_definition": "4 * n_He4 / n_b (AlterBBN ratioH[6])",
+  "D_over_H": 2.424999e-05,
+  "He3_over_H": 1.028044e-05,
+  "Li7_over_H": 5.488261e-10,
+  "eta": 6.114e-10,
+  "n_eff": 3.044,
+  "tau_n_used": 877.75,
+  "network_name": "AlterBBN v2.2 (Arbey, Auffinger, Hickerson & Jenssen, Comput. Phys. Commun. 248 (2020) 106982, arXiv:1806.11095)",
+  "binary": "/workspace/bbncodes/alterbbn_v2.2/sb_bbn.x",
+  "binary_sha256": "c407eee839b84ce1f5dd4c23348cd0bbd21d7fdfc1be308b112cf2de637f0071",
+  "cache_path": "datasets/prime_past/alterbbn/alterbbn__sb_bbn__eta6.1140e-10_neff3.0440_tau877.75_fs1.csv",
+  "conservation_max_rel": 2.0126122990404838e-12,
   "observational_table": null
 }

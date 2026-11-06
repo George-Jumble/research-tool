@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tav_research.data_pull_common import COMMON_BATCH_HINT, standard_entry_fields
+from sb_research.data_pull_common import COMMON_BATCH_HINT, standard_entry_fields
 
 MENU_LABEL = "Belle II (Meson Oscillation)"
 

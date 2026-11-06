@@ -1,6 +1,6 @@
 """Compatibility shim for legacy DataManager imports."""
 
-from tav_shared.ingestion.data_manager import (
+from sb_shared.ingestion.data_manager import (
     DATA_MANAGER_LEGACY_PARAM_KEY,
     DATA_MANAGER_PARAM_KEY,
     DataManager,

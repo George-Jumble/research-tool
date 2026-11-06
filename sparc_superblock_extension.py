@@ -1,6 +1,6 @@
 """Backward-compatible re-export of the unified SPARC extension."""
 
-from tav_shared.llm_analysis import analyze_run_output as query_llm_analysis
+from sb_shared.llm_analysis import analyze_run_output as query_llm_analysis
 from menus.astronomical.sparc.extension import (
     MENU_ACTIONS,
     MODULE_TAG,

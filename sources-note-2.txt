@@ -1,4 +1,4 @@
-Beyond SPARC and HALOGAS, the astronomical community has embraced an incredible era of "open science." If you are looking to test the Unified Tav-Superblock Cosmology against raw observational data—whether you are charting rotation curves, mapping cosmic voids, or analyzing the Cosmic Microwave Background—there is a vast ecosystem of publicly accessible repositories available.
+Beyond SPARC and HALOGAS, the astronomical community has embraced an incredible era of "open science." If you are looking to test the Unified Superblock Cosmology against raw observational data—whether you are charting rotation curves, mapping cosmic voids, or analyzing the Cosmic Microwave Background—there is a vast ecosystem of publicly accessible repositories available.
 
 Here are the most relevant and prominent public databases, categorized by what they offer:
 
@@ -7,7 +7,7 @@ Here are the most relevant and prominent public databases, categorized by what t
 If you want to continue testing the "6-Domain Conformal Gravity" shadow against galactic rotation curves, these are your best stops:
 
 * **THINGS (The HI Nearby Galaxy Survey):** Conducted using the Very Large Array (VLA), this is one of the highest-resolution databases of neutral hydrogen (HI) in nearby galaxies. It provides the exact kind of high-resolution velocity and density data needed to map rotation curves and dark matter halos.
-* **LITTLE THINGS:** The companion survey to THINGS, focusing specifically on dwarf irregular galaxies. Dwarf galaxies are heavily dark-matter dominated in standard physics, making them the ultimate stress-test for the Tav-Superblock conformal gravity alternative.
+* **LITTLE THINGS:** The companion survey to THINGS, focusing specifically on dwarf irregular galaxies. Dwarf galaxies are heavily dark-matter dominated in standard physics, making them the ultimate stress-test for the Superblock conformal gravity alternative.
 * **ALFALFA (Arecibo Legacy Fast ALFA Survey):** A massive blind HI survey mapping the local universe. It provides vital data on the HI mass function and the velocity widths of thousands of galaxies.
 
 ### 2. Large-Scale Cosmological & Optical Surveys

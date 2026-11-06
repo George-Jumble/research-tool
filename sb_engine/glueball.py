@@ -1,4 +1,11 @@
-"""Glueball ledger. 0++ is 2*m0*e (LIVE true prediction). 0-+ stays PACKED. No other J^PC packs."""
+"""Glueball ledger (v5). The 0++ pack 2*Delta*e is RETIRED as a live comparison.
+
+v5 Section 9: "The floor is not a particle pole and not a glueball; the 313 MeV glueball is retired.
+The Yang-Mills mass gap is not derived." Retired from v1: "the light scalar glueball near 2*Delta as a
+live comparison (not re-confirmed)". Framework model: "The 313 MeV glueball and the 1.5-1.7 GeV window
+are retired." 2*Delta*e = 1702 MeV sits in that window, so the old TRUE_PREDICTION ledger is withdrawn.
+The numbers are still computed so reports can show what was retired. 0-+ 15/2 stays PACKED.
+"""
 
 from __future__ import annotations
 
@@ -14,10 +21,12 @@ LATTICE_0PP_MEV = 1710.0
 LATTICE_0PP_UNC_MEV = 50.0
 BESIII_X2370_MEV = 2359.0
 BESIII_X2370_UNC = "+13/-14"
+RETIRED_WINDOW_MEV = (1500.0, 1700.0)
+GLUEBALL_STATUS = "RETIRED"
 
 
 def m_0pp_th(m0: float = DELTA_TEP_MEV) -> float:
-    """True prediction: 2 * m0 * e. Coefficient is frozen. m0 is an insertion."""
+    """Retired pack 2 * Delta * e (record only; not a live prediction under v5)."""
     return 2.0 * float(m0) * math.e
 
 
@@ -30,6 +39,7 @@ def live_0pp_residual(
     lattice_unc_mev: float = LATTICE_0PP_UNC_MEV,
     m0: float = DELTA_TEP_MEV,
 ) -> dict[str, Any]:
+    """Residual of the retired pack against lattice. Diagnostic only; never a ledger PASS."""
     m_th = m_0pp_th(m0)
     delta = float(lattice_mev) - m_th
     z = delta / float(lattice_unc_mev) if lattice_unc_mev else float("nan")
@@ -39,6 +49,7 @@ def live_0pp_residual(
         "pull_z": z,
         "lattice_MeV": float(lattice_mev),
         "lattice_unc_MeV": float(lattice_unc_mev),
+        "diagnostic_only": True,
     }
 
 
@@ -48,12 +59,12 @@ def ledger_snapshot(m0: float = DELTA_TEP_MEV) -> dict[str, Any]:
     return {
         "corpus_date": CORPUS_DATE,
         "m0_MeV": m0,
-        "m0_note": "insertion (neutron dressing share); not fitted to glueball data",
-        "e_status": "LIVE",
-        "even_mass_formula_status": "LIVE",
+        "m0_note": "Delta = 313.1 MeV locked floor (Mirron double reduced-Compton length); not a glueball",
+        "e_status": GLUEBALL_STATUS,
+        "even_mass_formula_status": GLUEBALL_STATUS,
         "theory_0pp_MeV": resid["m_th"],
-        "theory_0pp_MeV_is_prediction": True,
-        "formula_0pp": "2 * m0 * e",
+        "theory_0pp_MeV_is_prediction": False,
+        "formula_0pp": "2 * m0 * e (retired)",
         "delta_MeV": resid["delta_MeV"],
         "pull_z": resid["pull_z"],
         "packed_0mp_MeV": packed_0mp(m0),
@@ -64,6 +75,7 @@ def ledger_snapshot(m0: float = DELTA_TEP_MEV) -> dict[str, Any]:
         "besiii_x2370_combo_MeV": BESIII_X2370_MEV,
         "besiii_x2370_combo_unc": BESIII_X2370_UNC,
         "besiii_contact": "SCALE_CONTACT",
-        "status": "TRUE_PREDICTION",
-        "note": "0++ is 2*m0*e (LIVE). 0-+ 15/2 remains PACKED / SCALE_CONTACT. No other J^PC packs.",
+        "status": GLUEBALL_STATUS,
+        "yang_mills_gap_derived": False,
+        "note": "v5: floor is not a glueball; 1.5-1.7 GeV window retired; Yang-Mills gap not derived.",
     }

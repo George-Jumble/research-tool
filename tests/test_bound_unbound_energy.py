@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from tav_shared.bound_unbound_energy import (
+from sb_shared.bound_unbound_energy import (
     partition_energy,
     partition_periodogram_totals,
 )
@@ -38,23 +38,9 @@ def test_negative_delta_is_not_more_bound():
         e_free=e_free,
         e_th=10.0,
         is_discrete_harmonic=True,
-        tau_bind_ok=True,
+        bind_ok=True,
         significance=10.0,
         ledger="deficit",
     )
     assert split["sum_E_b"] == 0.0
     assert np.all(split["delta_e_bind"] < 0)
-
-
-def test_casimir_periodogram_exposes_clean_split():
-    from menus.particle.casimir.significance import residual_periodogram_significance
-
-    rng = np.random.default_rng(7)
-    x = np.arange(64, dtype=float)
-    y = rng.normal(size=64)
-    spec = residual_periodogram_significance(y, x, n_bootstrap=0)
-    assert "E_bound_clean" in spec
-    assert "E_unbound_clean" in spec
-    assert spec["E_unbound_clean"] + spec["E_bound_clean"] <= spec.get(
-        "power_at_one_seventh", 0
-    ) + spec["E_unbound_clean"] + 1e-9

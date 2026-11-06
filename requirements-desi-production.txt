@@ -1,4 +1,4 @@
-# Optional production dependencies for tau_sb_desi_scanner
+# Optional production dependencies for the DESI loaders
 jax>=0.4.20
 jaxlib>=0.4.20
 dynesty>=2.0

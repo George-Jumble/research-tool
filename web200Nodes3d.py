@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tav-Superblock 3D Cosmic Web — ~200 Nodes
+Superblock 3D Cosmic Web — ~200 Nodes
 ==========================================
 
 A large-scale but still diagrammatic 3D visualization of the cosmic web
@@ -16,13 +16,13 @@ Features:
 - Clean dark aesthetic matching the single-node explanatory style
 
 Run:
-    python cosmic_web_200_nodes_tav_superblock_3d.py
+    python web200Nodes3d.py
 """
 
 import numpy as np
 import plotly.graph_objects as go
 
-from tav_shared.cosmic_web_style import (
+from sb_shared.cosmic_web_style import (
     CHOKE_HIGHLIGHT_THRESHOLD,
     CHOKE_VISUAL_THRESHOLD,
     CYAN_GLOW,
@@ -156,7 +156,7 @@ def create_200_node_web():
 
     node_links = [(f["start"], f["end"]) for f in filaments]
 
-    # --- τ-hex ring on every cluster node (centered on the well) ---
+    # --- hex ring on every cluster node (centered on the well) ---
     add_cluster_hex_rings(
         fig,
         nodes,
@@ -199,7 +199,7 @@ def create_200_node_web():
 
     apply_exhaustion_layout(
         fig,
-        "Tav-Superblock 3D Cosmic Web (~200 Nodes)",
+        "Superblock 3D Cosmic Web (~200 Nodes)",
         "7 h⁻¹ Mpc Conformal Exhaustion • Local Gravity Wells • 142857 Resonance Choking",
         camera=dict(eye=dict(x=1.4, y=1.4, z=0.9)),
     )
@@ -209,7 +209,7 @@ def create_200_node_web():
             "<b>Conformal Exhaustion Palette</b><br>"
             f"<span style='color:{CYAN_GLOW}'>Cyan glow</span> = conformal gravity wells<br>"
             f"<span style='color:#0088ff'>Blue web</span> = 3D-supported cool filaments<br>"
-            f"<span style='color:{RESONANCE_RED}'>Magenta-red</span> = τ-hex per node + inter-node force lines<br>"
+            f"<span style='color:{RESONANCE_RED}'>Magenta-red</span> = hex ring per node + inter-node force lines<br>"
             f"<span style='color:{RESONANCE_RED}'>Bright red</span> = choke threads (≥ {CHOKE_VISUAL_THRESHOLD})"
         ),
         x=0.99, y=0.82,
@@ -242,7 +242,7 @@ def create_200_node_web():
 # ============================================================
 
 if __name__ == "__main__":
-    print("Generating Tav-Superblock 3D cosmic web with ~200 nodes...")
+    print("Generating Superblock 3D cosmic web with ~200 nodes...")
     fig = create_200_node_web()
     fig.show()
-    print("Done. The bright red lines are the choked 1D filaments where the Tav-Superblock physics is most visible.")
+    print("Done. The bright red lines are the choked 1D filaments where the Superblock physics is most visible.")

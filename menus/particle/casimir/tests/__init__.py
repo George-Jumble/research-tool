@@ -1,1 +1,0 @@
-"""Casimir diagnostics tests."""

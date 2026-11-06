@@ -27,7 +27,7 @@ def fetch_and_graph(repo, query):
     fig, ax = plt.subplots(figsize=(10, 7))
     ax.plot(x, y_obs, 'k.', label="Observed Data")
     ax.plot(x, y_sm, 'g--', label="Standard Model (NFW)")
-    ax.plot(x, y_ts, 'r-', label="Tav-Superblock (TS)")
+    ax.plot(x, y_ts, 'r-', label="Superblock (TS)")
     
     # Textual assessment inside the graphic output window
     dev = np.mean(np.abs(y_obs - y_ts))

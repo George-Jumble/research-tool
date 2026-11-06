@@ -1,5 +1,8 @@
 """
-LHCb Tav-Echo module ↔ research_tool.py
+LHCb flavor residuals ↔ research_tool.py
+
+Download materializes the C9(q²) series under datasets/lhcb/. Score / Plot / Full Report are
+scored by the Superblock residual engine (template C); plot actions draw ΔC9 vs q².
 """
 
 from __future__ import annotations
@@ -8,16 +11,14 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-from menus.particle.lhcb.echo import (
+from menus.particle.lhcb.flavor import (
     DEFAULT_DATA_PATH,
     DEFAULT_N_BINS,
     clip_n_bins,
-    run_pipeline,
 )
-from tav_shared.llm_analysis import analyze_run_output as query_llm_analysis
-from tav_shared.run_output import parse_show_graphics
+from sb_shared.run_output import parse_show_graphics
 
-MODULE_TAG = "LHCB_TAV_ECHO"
+MODULE_TAG = "LHCB_FLAVOR"
 SUBMENU_TITLE = "LHCb Flavor Residuals"
 
 DOWNLOAD_ACTION = "Download LHCb B-meson Dataset"
@@ -30,10 +31,49 @@ MENU_ACTIONS = [
 ]
 
 _ACTION_CONFIG = {
-    "Run Tav-Echo Correlation": {"plot": False},
-    "Plot Residuals vs Kernel": {"plot": True},
-    "Full Analysis (Stats + Plot)": {"plot": True},
+    "Score Flavor Residuals": {"plot": False},
+    "Plot Flavor Residuals": {"plot": True},
+    "Full Flavor Residual Report": {"plot": True},
 }
+
+
+def _plot_residual_report(report: dict, options: dict, show_popup: bool) -> str | None:
+    """Plot C9_exp - C9_SM vs q² from the residual engine's LHCb load (Template C)."""
+    from menus.particle.lhcb.flavor import ARTIFACTS_DIR, ensure_output_dirs, load_lhcb_data
+
+    data_path = (options.get("data_file") or str(DEFAULT_DATA_PATH)).strip()
+    n_bins = clip_n_bins(options.get("n_q2_bins") or DEFAULT_N_BINS)
+    try:
+        data, path = load_lhcb_data(Path(data_path), n_bins=n_bins)
+    except Exception as exc:
+        print(f"[Superblock Residual Engine] LHCb plot skipped: {exc}")
+        return None
+    ensure_output_dirs()
+    output_name = (options.get("output_name") or "lhcb_flavor_residuals.png").strip()
+    if not output_name.endswith(".png"):
+        output_name += ".png"
+    out = ARTIFACTS_DIR / output_name
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.errorbar(
+        data["q2_bin"], data["C9_exp"] - data["C9_SM"], yerr=data["C9_exp_err"],
+        fmt="o", ms=4, capsize=2, label="C9_exp − C9_SM",
+    )
+    ax.axhline(0.0, color="k", lw=0.8, label="SM baseline")
+    ax.set_xlabel("q² [GeV²]")
+    ax.set_ylabel("ΔC9")
+    ax.set_title(
+        f"LHCb flavor residuals (Template C)  verdict={report.get('verdict')}  "
+        f"N={report.get('N')}"
+    )
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    print(f"[Superblock Residual Engine] Plot saved: {out} (data {path.name})")
+    if show_popup:
+        plt.show()
+    else:
+        plt.close(fig)
+    return str(out)
 
 
 def is_module_selection(repo: str | None) -> bool:
@@ -58,7 +98,7 @@ def _n_bins_field() -> dict:
 # BLOCK: Entry form — fields
 # =============================================================================
 def entry_fields(action: str) -> list[dict]:
-    """Curses entry-form field specs for LHCb Tav-Echo actions."""
+    """Curses entry-form field specs for LHCb flavor actions."""
     if action == DOWNLOAD_ACTION:
         return [
             _n_bins_field(),
@@ -81,16 +121,9 @@ def entry_fields(action: str) -> list[dict]:
         },
         _n_bins_field(),
         {
-            "key": "mass_gap",
-            "label": "Mass-gap anchor m₀ (MeV)",
-            "default": "313.1",
-            "required": False,
-            "hint": "Resonance kernel uses 1/(m₀² + q²)",
-        },
-        {
             "key": "output_name",
             "label": "Plot filename (optional)",
-            "default": "lhcb_tav_echo_correlation.png",
+            "default": "lhcb_flavor_residuals.png",
             "required": False,
             "hint": "Saved under artifacts/lhcb/ for plot actions",
         },
@@ -109,7 +142,7 @@ def entry_fields(action: str) -> list[dict]:
 # BLOCK: Entry form — instructions
 # =============================================================================
 def entry_instructions(action: str) -> list[str]:
-    """Short help bullets shown above the LHCb Tav-Echo entry form."""
+    """Short help bullets shown above the LHCb flavor entry form."""
     if action == DOWNLOAD_ACTION:
         return [
             "First step: materialize the B-meson C9(q²) series under datasets/lhcb/.",
@@ -122,17 +155,25 @@ def entry_instructions(action: str) -> list[str]:
         "Loads structured NumPy file: q2_bin, C9_exp, C9_exp_err, C9_SM.",
         f"Default path: {DEFAULT_DATA_PATH}",
         f"q² bin count defaults to {DEFAULT_N_BINS} (overrides a stale 6-bin file).",
-        "Correlates (C9_exp - C9_SM) with 1/(m₀² + q²); m₀ defaults to 313.1 MeV.",
+        "Residual D − B = C9_exp − C9_SM per q² bin (SM baseline).",
         "Plot actions save PNG under artifacts/lhcb/; popup opens after curses exits.",
     ]
 
 
-def run_action(selection: str, show_plots: bool = True, options: dict | None = None) -> None:
+def run_action(selection: str, show_plots: bool = True, options: dict | None = None) -> str | None:
     from superblock_mode import CONTINUE, begin_live_action
 
     routed = begin_live_action(MODULE_TAG, selection, options)
     if routed is not CONTINUE:
-        return None
+        config = _ACTION_CONFIG.get(selection)
+        if isinstance(routed, dict) and config and config["plot"]:
+            show_popup = (
+                parse_show_graphics(options or {}, default="artifacts") if show_plots else False
+            )
+            _plot_residual_report(routed, options or {}, show_popup)
+        if isinstance(routed, dict):
+            return routed.get("report_path")
+        return routed
     options = options or {}
     n_bins = clip_n_bins(options.get("n_q2_bins") or DEFAULT_N_BINS)
 
@@ -143,34 +184,8 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
             n_bins=n_bins,
             force_refresh=_yes(options.get("force_refresh", "no")),
         )
-        print("[Superblock Residual Engine] Next: Run Tav-Echo Correlation or Full Analysis.")
-        return
+        print("[Superblock Residual Engine] Next: Score Flavor Residuals or Full Flavor Residual Report.")
+        return None
 
-    config = _ACTION_CONFIG.get(selection)
-    if config is None:
-        print(f"[Superblock Residual Engine] Unknown LHCb Tav-Echo action: {selection}")
-        return
-
-    data_path = (options.get("data_file") or str(DEFAULT_DATA_PATH)).strip()
-    try:
-        mass_gap = float(options.get("mass_gap") or "313.1")
-    except ValueError:
-        mass_gap = 313.1
-
-    output_name = (options.get("output_name") or "lhcb_tav_echo_correlation.png").strip()
-    if not output_name.endswith(".png"):
-        output_name += ".png"
-
-    show_popup = parse_show_graphics(options, default="artifacts") if show_plots else False
-
-    run_pipeline(
-        data_path=Path(data_path),
-        mass_gap_mev=mass_gap,
-        plot=config["plot"],
-        show_plot=show_popup,
-        output_name=output_name,
-        n_bins=n_bins,
-    )
-
-    if show_popup and config["plot"]:
-        plt.show()
+    print(f"[Superblock Residual Engine] Unknown LHCb action: {selection}")
+    return None

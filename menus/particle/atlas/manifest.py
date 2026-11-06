@@ -78,7 +78,6 @@ ATLAS_MANIFEST: dict[str, dict[str, Any]] = {
 
 ACTION_DEFAULT_TARGETS: dict[str, list[str]] = {
     "Pull ATLAS Open Data": list(ATLAS_MANIFEST.keys()),
-    "ATLAS 2lep Lepton Tav Analysis": ["atlas_2lep_data_A"],
     "ATLAS Open Data Lepton Scan": ["atlas_2lep_data_A"],
 }
 

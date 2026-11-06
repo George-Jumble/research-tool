@@ -1,4 +1,4 @@
-# Tau-Superblock Research Engine — core dependencies
+# Superblock Research Engine — core dependencies
 # Python 3.11+ recommended
 
 # Scientific stack
@@ -32,6 +32,3 @@ plotly>=5.0
 emcee>=3.1
 ruptures>=1.1.9
 statsmodels>=0.14
-
-# Tav harmonic resonance library (PyPI)
-tav-resonance>=0.1.0

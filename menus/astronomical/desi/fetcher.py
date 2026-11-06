@@ -7,11 +7,11 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from tav_shared.dataset_ledger import mark_processed
-from tav_shared.tav_project_paths import TAU_SUPERBLOCK_ROOT
+from sb_shared.dataset_ledger import mark_processed
+from sb_shared.project_paths import SUPERBLOCK_ROOT
 
 BAO_DATA_REPO_URL = "https://github.com/CobayaSampler/bao_data.git"
-DATASETS_DIR = TAU_SUPERBLOCK_ROOT / "datasets" / "desi"
+DATASETS_DIR = SUPERBLOCK_ROOT / "datasets" / "desi"
 BAO_DATA_DIR = DATASETS_DIR / "bao_data"
 DEFAULT_COBAYA_ROOT = BAO_DATA_DIR / "desi_bao_dr2"
 DESI_DATASET_ID = "desi:bao_data_dr2"

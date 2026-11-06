@@ -1,5 +1,5 @@
 """
-Download / materialize the LHCb B-meson C9(q²) series used by Tav-Echo.
+Download / materialize the LHCb B-meson C9(q²) series scored by the Superblock residual engine.
 
 HEPData is attempted first (LHCb PRL 125, 011802 / ins1784890). Cloudflare
 often blocks that host; the fallback writes a denser interpolated series
@@ -15,16 +15,15 @@ from typing import Any
 import numpy as np
 import requests
 
-from menus.particle.lhcb.echo import (
+from menus.particle.lhcb.flavor import (
     CACHE_DIR,
     DEFAULT_DATA_PATH,
-    DEFAULT_N_BINS,
     DTYPE,
     clip_n_bins,
     resample_c9_series,
     save_default_dataset,
 )
-from tav_shared.dataset_ledger import mark_processed
+from sb_shared.dataset_ledger import mark_processed
 
 HEPDATA_INSPIRE = "1784890"
 HEPDATA_JSON_URL = f"https://www.hepdata.net/record/ins{HEPDATA_INSPIRE}?format=json"
@@ -46,7 +45,7 @@ def _try_hepdata_c9_table() -> np.ndarray | None:
         response = requests.get(
             HEPDATA_JSON_URL,
             timeout=30,
-            headers={"User-Agent": "tav-research-tool/1.0"},
+            headers={"User-Agent": "superblock-research-tool/1.0"},
         )
         response.raise_for_status()
         if "application/json" not in (response.headers.get("content-type") or "") and not (

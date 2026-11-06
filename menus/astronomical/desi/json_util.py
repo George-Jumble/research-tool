@@ -1,4 +1,4 @@
-"""JSON helpers for Tau-SB DESI artifacts (NumPy-safe serialization)."""
+"""JSON helpers for DESI artifacts (NumPy-safe serialization)."""
 
 from __future__ import annotations
 

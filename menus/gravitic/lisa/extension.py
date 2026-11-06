@@ -22,7 +22,7 @@ MENU_ACTIONS = [
 
 
 def entry_fields(action: str) -> list[dict]:
-    from tav_shared.llm_analysis import append_llm_entry_fields
+    from sb_shared.llm_analysis import append_llm_entry_fields
 
     if action == "List Cached Mock Data":
         return append_llm_entry_fields([])

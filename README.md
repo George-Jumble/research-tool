@@ -1,20 +1,18 @@
 # Superblock Research Tool
 
-Interactive curses console for **3+1D Superblock / Mirron** residuals. Loaders for DESI DR2, SPARC, CMS, LHCb, LIGO/LISA, and Casimir stay. Default scoring does not apply Tau, Tav, KK, 142857, or 5D templates.
+Interactive curses console for **3+1D Superblock / Mirron** residuals. Loaders for DESI DR2, SPARC, CMS, LHCb, LIGO/LISA, and Casimir stay. Default scoring does not apply KK, 142857, or 5D templates; the old extra-dimension template code has been removed.
 
 **Entry point:** `research_tool.py`
 
-Boot file: `config/superblock_only.json` (`tau_5d_templates` is forced false).
+Boot file: `config/superblock_only.json`.
 
 ## Residual analysis (live question)
 
 After a standard 3+1D ΛCDM, SM, GR, or Newtonian SPARC reduction, do the residuals match Superblock / Mirron predictions and not a compact extra dimension?
 
-Rejected on the default path: 7-fold Tav / KK signatures, a 7 h⁻¹ Mpc compact S¹, the 142857 comb, RGC as a cosmological backend, and a 5D roll or Coleman bounce.
+Rejected on the default path: 7-fold / KK signatures, a 7 h⁻¹ Mpc compact S¹, the 142857 comb, RGC as a cosmological backend, and a 5D roll or Coleman bounce.
 
 Full key and pipeline: [docs/RESIDUAL_ANALYSIS.md](docs/RESIDUAL_ANALYSIS.md).
-
-Retired menu note: [docs/retired/RETIRED_TAU_MODULES.md](docs/retired/RETIRED_TAU_MODULES.md).
 
 Inventory: [docs/SUPERBLOCK_ONLY_INVENTORY.md](docs/SUPERBLOCK_ONLY_INVENTORY.md).
 
@@ -25,9 +23,12 @@ See [VERSION](VERSION) and [CHANGELOG.md](CHANGELOG.md). Current corpus: **2026.
 ## Command list
 
 - `python research_tool.py geometry` — prints \(m_0\), \(r_M\) from `sb_engine/constants.py`
-- Live residual path: SPARC Template B (`kernels/g_avg.py`), DESI sound horizon (`sb_engine/sound_horizon.py`), FRB DM load, empirical Yang-Mills \(0^{++}\)
-- hold: neutron (J-PARC appearance; \(\varepsilon\) not applied)
-- not live: Tav runner, BBN yield scorer, extra \(J^{PC}\) glueball packs
+- Live residual path (flagship v5, 2026-11-04): SPARC Template B = hierarchical \(L_{\rm res}\) kernel (`kernels/l_res_rl.py`), Prime's standard sound horizon (`sb_engine/sound_horizon.py`, no \(\gamma=10.74\)), FRB DM load
+- live consistency: neutron module as a local mass ratio (`sb_engine/neutron.py`, 878.7 ± 2.1 s)
+- v5 confrontations (menu **Superblock v5 Confrontations**; `tests/test_superblock_v5.py`): 5.4015 vs Planck, \(N_{\rm eff}\), BBN, \(r_d\), hidden BAO, relay hierarchy, local couplings
+- retired: \(0^{++}=2m_0e\) glueball pack, G_avg kernel, 309.3 MeV floor (floor is \(\Delta=313.1\) MeV)
+- not live: in-repo BBN yield network beyond the standard comparison, extra \(J^{PC}\) glueball packs
+- Test changes for v5: [CHANGES_v5_tests.md](CHANGES_v5_tests.md)
 - `sb_engine/{cms,casimir,sparc}.py` — SYNTHETIC illustrations only
 
 The empirical menu does not feed PASS into SPARC, DESI, CMS, Casimir, or bounce.
@@ -60,9 +61,13 @@ API keys: `config/api_keys.env` (see example) or the same env vars the gateway u
 (`XAI_API_KEY`, `NVIDIA_API_KEY` / `NV_API_KEY`, `OLLAMA_BASE_URL`, …).
 Gateway persistent memory (name, notes) is passed into the child process env.
 
+## Legacy names
+
+Module tags, directories and env vars were renamed (e.g. `tav_shared` → `sb_shared`, `tav_research` → `sb_research`, `LHCB_TAV_ECHO` → `LHCB_FLAVOR`). `sb_shared/legacy_names.py` maps the old names so existing datasets, staging archives, ledgers and env settings keep working; nothing on disk is moved or deleted.
+
 ## Remote archive transfer
 
-Finished datasets are staged locally under `.tav_project_staging/` and can be copied to a configured remote host when enabled.
+Finished datasets are staged locally under `.sb_project_staging/` (an existing pre-rename staging folder is reused in place) and can be copied to a configured remote host when enabled.
 
 Remote SSH host updates are **disabled in code** (local staging only).
 
@@ -72,7 +77,7 @@ Remote SSH host updates are **disabled in code** (local staging only).
 
 - **Modular menus** — each domain lives in `menus/*/` with thin `*_extension.py` shims at the project root for backward compatibility
 - **Dataset manager** — fetch, cache, and resume batch downloads (DESI, Planck, SPARC, FRB, LHCb, …)
-- **Prime Past / BBN** — τ-Euler BBN interference scans, lithium confrontation, enhanced 5-state engine
+- **Prime Past / BBN** — standard BBN network comparison scored by the residual engine
 - **Remote AI** — Grok, Gemini, OpenAI, Claude, OpenRouter, Ollama, NVIDIA NIM (`integrate.api.nvidia.com`)
 - **Post-run LLM review** — set **AI verbose review = yes** on any module entry form
 
@@ -109,9 +114,9 @@ Or use the helper script:
 ## Project layout
 
 ```
-research_tool.py          # Thin entry → tav_research/runner.py
-tav_research/             # Curses UI, menu tree, registry, data pull
-tav_shared/               # LLM analysis, remote AI, run output, paths
+research_tool.py          # Thin entry → sb_research/runner.py
+sb_research/             # Curses UI, menu tree, registry, data pull
+sb_shared/               # LLM analysis, remote AI, run output, paths
 menus/                    # Domain modules (prime_past, astronomical, particle, …)
 config/                   # api_keys.env.example
 scripts/                  # Maintenance utilities
@@ -123,24 +128,22 @@ Before each run, `ensure_datasets_before_run` materializes curated empirical tab
 
 | Module | Actions | Targets |
 |--------|---------|---------|
-| `PRIME_PAST_HARMONIC` | BBN Interference / Confrontation / Enhanced / Final | `empirical:bbn_abundances`, `empirical:neutron_lifetime` |
-| `TSB_RESEARCH` | Fractal Tau Circle Likelihood | `empirical:glueball_lattice`, `empirical:neutron_lifetime` |
-| `TSB_RESEARCH` | Residual Diagnostics, Calibrate SoundHorizon | `empirical:neutron_lifetime` |
+| `EMPIRICAL_TESTS` | per-action keys from the extension | `empirical:*` |
 
-Config: `tav_shared/empirical_action_targets.py`. Provenance is stored on `options['_empirical_provenance']` and written into JSON reports.
+Config: `sb_shared/empirical_action_targets.py`. Provenance is stored on `options['_empirical_provenance']` and written into JSON reports.
 
 ## Automated ingestion validation
 
-Pydantic-backed validation runs before data reaches Tau-Superblock solvers and `log_likelihood`:
+Pydantic-backed validation runs before data reaches Superblock solvers and `log_likelihood`:
 
 | Package | Role |
 |---------|------|
-| `tav_shared/ingestion/schemas.py` | CMS dimuon, BBN empirical, fractal-tau models |
-| `tav_shared/ingestion/normalize.py` | CSV / JSON / ROOT-derived dict → canonical internal format |
-| `tav_shared/ingestion/pipeline.py` | `IngestionValidationReport`, batch validators, anomaly filtering |
-| `tav_shared/ingestion/config.py` | Physical bounds; override via `TAV_INGESTION_CONFIG` JSON path |
+| `sb_shared/ingestion/schemas.py` | CMS dimuon, BBN empirical models |
+| `sb_shared/ingestion/normalize.py` | CSV / JSON / ROOT-derived dict → canonical internal format |
+| `sb_shared/ingestion/pipeline.py` | `IngestionValidationReport`, batch validators, anomaly filtering |
+| `sb_shared/ingestion/config.py` | Physical bounds; override via `SB_INGESTION_CONFIG` JSON path (old `TAV_` name still accepted) |
 
-**Integrated entry points:** `extract_dimuon_kinematics_from_nanoaod`, `fetch_empirical_data` (BBN), `log_likelihood` / `log_likelihood_tep_ansatz` (fractal tau).
+**Integrated entry points:** `extract_dimuon_kinematics_from_nanoaod`, `fetch_empirical_data` (BBN).
 
 ## Standardized dataset comparison
 
@@ -148,56 +151,18 @@ Apples-to-apples MC vs data and model vs observed checks during preprocessing:
 
 | Package | Role |
 |---------|------|
-| `tav_shared/dataset_comparison/scaling.py` | `StandardScaler`, `MinMaxScaler` (numpy, sklearn-compatible API) |
-| `tav_shared/dataset_comparison/keys.py` | Primary-key rounding, sort, inner-join alignment |
-| `tav_shared/dataset_comparison/tolerance.py` | `tolerant_diff`, `compare_mass_gap_mev` with configurable thresholds |
-| `tav_shared/dataset_comparison/pipeline.py` | `prepare_datasets_for_comparison`, `compare_histogram_pair`, reports |
+| `sb_shared/dataset_comparison/scaling.py` | `StandardScaler`, `MinMaxScaler` (numpy, sklearn-compatible API) |
+| `sb_shared/dataset_comparison/keys.py` | Primary-key rounding, sort, inner-join alignment |
+| `sb_shared/dataset_comparison/tolerance.py` | `tolerant_diff`, `compare_mass_gap_mev` with configurable thresholds |
+| `sb_shared/dataset_comparison/pipeline.py` | `prepare_datasets_for_comparison`, `compare_histogram_pair`, reports |
 
-Override tolerances and scalers via `TAV_COMPARISON_CONFIG` JSON path.
+Override tolerances and scalers via `SB_COMPARISON_CONFIG` JSON path (old `TAV_` name still accepted).
 
-**Integrated entry points:** `tav_compare_data_mc`, `enhanced_data_vs_mc_comparison`, `normalize_dimuon_events` (key-sorted), `log_likelihood_breakdown` (model vs observed tolerance block).
-
-## MCMC validation (TEP + Morris)
-
-Fractal tau circle MCMC treats validation as a hard prior constraint:
-
-| Module | Role |
-|--------|------|
-| `menus/tsb_research/fractal_tau_mcmc.py` | `log_prior_fractal_tau`, `log_probability_fractal_tau`, `run_fractal_tau_mcmc` |
-| `menus/tsb_research/sensitivity.py` | Morris OAT screening, sensitivity-driven parameter freeze/narrow |
-| `menus/tsb_research/fractal_tau_circle.py` | `satisfies_tep_142857_cycle_closure`, `tep_closure_diagnostics` |
-
-**Menu:** TSB Research → **Fractal Tau Circle Likelihood** with `Run TEP-hard MCMC (emcee) = yes`.
-
-Morris screening ranks `winding_density`, `fractal_level`, and `phase_slip_alpha` by impact on the 313.1 MeV floor; low-μ* parameters are frozen before emcee sampling.
-
-## CMS dimuon validation (HEP controls)
-
-Critique-driven upgrades (2026-07-15) for DoubleMuParked / MC comparisons:
-
-| Module | Role |
-|--------|------|
-| `menus/particle/cms/hep_statistics.py` | Trigger-aware mod-7 null, labeled engine scores, MC role warnings, fine q_T binning |
-| `menus/particle/cms/preregistered_recoil_study.py` | Frozen q_T window (0.25–0.40 GeV), shuffle/partition null tests, split-sample stability |
-| `menus/particle/cms/validation_extension.py` | Menu: **Preregistered Recoil q_T Study (HEP Controls)** |
-
-**CERN Open Data → Preregistered Recoil q_T Study (HEP Controls)** runs the preregistered pipeline.
-**Run MC Validation Suite** now labels Higgs MC as dedicated signal (not inclusive SM background) and reports internal engine scores separately from particle-physics significance.
-
-Reference: `Personal_Files/cms_dimuon_critique_hep_controls_2026-07-15.md`
-
-## CLI tools (BBN)
-
-| Script | Description |
-|--------|-------------|
-| `tav_bbn_confrontation.py` | RK45 BBN scanner with plots and JSON |
-| `enhanced_tav_bbn_confrontation.py` | 5-state BBN, Li7 heatmap |
-| `final_tav_bbn_confrontation_tool.py` | Best-config export and comparison plot |
-| `tav_bbn_menu_module.py` | Tav BBN submenu engine |
+**Integrated entry points:** `normalize_dimuon_events` (key-sorted), `log_likelihood_breakdown` (model vs observed tolerance block).
 
 ## Dependencies
 
-Core scientific stack: NumPy, SciPy, Matplotlib, Astropy, healpy, uproot/xrootd for ROOT/FITS I/O, plus [`tav-resonance`](https://pypi.org/project/tav-resonance/) for harmonic FRB/CMB analysis.
+Core scientific stack: NumPy, SciPy, Matplotlib, Astropy, healpy, uproot/xrootd for ROOT/FITS I/O.
 
 Large datasets and run artifacts are **not** in the repo — they are downloaded or written under `datasets/` and `artifacts/` at runtime (both gitignored).
 
@@ -209,7 +174,6 @@ This directory is a self-contained git export (no venv, artifacts, or secrets). 
 cd /path/to/research_tool
 ./scripts/push_to_github.sh git@github.com:YOUR_USER/YOUR_REPO.git
 ```
-
 
 Or set the remote yourself:
 

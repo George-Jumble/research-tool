@@ -11,7 +11,7 @@ import pandas as pd
 import uproot
 
 from menus.particle.hepdata.data_pull import fetch_and_graph as hepdata_fetch
-from tav_research.data_pull_common import COMMON_BATCH_HINT, standard_entry_fields
+from sb_research.data_pull_common import COMMON_BATCH_HINT, standard_entry_fields
 
 MENU_LABEL = "ALICE Heavy-Ion (Thermal Cooling)"
 

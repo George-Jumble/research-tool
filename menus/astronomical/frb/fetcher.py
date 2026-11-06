@@ -22,17 +22,17 @@ from typing import Iterable, List, Optional, Set, Tuple
 import pandas as pd
 import requests
 
-from tav_shared.tav_project_paths import (
+from sb_shared.project_paths import (
     FINISHED_A_DIR,
     LEGACY_FINISHED_A_DIR,
-    ensure_tav_project_dirs,
+    ensure_project_dirs,
     finished_a_search_dirs,
     move_to_finished_archive,
 )
 
-from tav_shared.tav_project_paths import TAU_SUPERBLOCK_ROOT
+from sb_shared.project_paths import SUPERBLOCK_ROOT
 
-DATASETS_DIR = TAU_SUPERBLOCK_ROOT / "datasets" / "frb"
+DATASETS_DIR = SUPERBLOCK_ROOT / "datasets" / "frb"
 DONE_FILE = DATASETS_DIR / "done.txt"
 
 DEFAULT_FRB_CSV = DATASETS_DIR / "chime_frb_catalog.csv"
@@ -209,7 +209,7 @@ class FetchSummary:
 
 def ensure_dirs() -> None:
     DATASETS_DIR.mkdir(parents=True, exist_ok=True)
-    ensure_tav_project_dirs()
+    ensure_project_dirs()
 
 
 def read_done_list(done_file: Path | str = DONE_FILE) -> Set[str]:
@@ -249,7 +249,7 @@ def sync_done_list(done_file: Path | str = DONE_FILE) -> int:
 
 
 def _restore_from_finished_a(filename: str, dest: Path) -> bool:
-    """Copy a dataset CSV from tav_project/finishedA/ back into datasets/frb/."""
+    """Copy a dataset CSV from the staging finishedA/ archive back into datasets/frb/."""
     stem = Path(filename).stem
     suffix = Path(filename).suffix
     for archive_dir in finished_a_search_dirs():
@@ -273,7 +273,7 @@ def _restore_from_finished_a(filename: str, dest: Path) -> bool:
 
 def _is_ledger_processed(target_id: str) -> bool:
     try:
-        from tav_shared.dataset_ledger import is_processed
+        from sb_shared.dataset_ledger import is_processed
 
         return is_processed(target_id)
     except ImportError:
@@ -793,7 +793,7 @@ def resolve_dataset_paths(
 
 
 def archive_used_datasets(paths: Iterable[Path | str]) -> list[Path]:
-    """Move processed CSV files from datasets/frb/ into tav_project/finishedA/ (replaces prior run)."""
+    """Move processed CSV files from datasets/frb/ into the staging finishedA/ archive (replaces prior run)."""
     ensure_dirs()
     moved: list[Path] = []
     seen: set[Path] = set()

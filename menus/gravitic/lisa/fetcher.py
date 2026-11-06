@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
-from tav_shared.batch_ledger import LISA_PULL_DONE, append_done_entries, read_done_list
-from tav_shared.tav_project_paths import ensure_tav_project_dirs, move_to_finished_archive
+from sb_shared.batch_ledger import LISA_PULL_DONE, append_done_entries, read_done_list
+from sb_shared.project_paths import ensure_project_dirs, move_to_finished_archive
 
 from menus.gravitic.common.download import copy_local_file, download_uri, is_pelican_uri, is_remote_uri
 
@@ -35,7 +35,7 @@ class PullSummary:
 
 def ensure_dirs() -> None:
     DATASETS_DIR.mkdir(parents=True, exist_ok=True)
-    ensure_tav_project_dirs()
+    ensure_project_dirs()
 
 
 def list_cached_files() -> list[Path]:

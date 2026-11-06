@@ -19,20 +19,20 @@ from typing import Dict, Iterable, List, Optional, Set
 import pandas as pd
 import requests
 
-from tav_shared.batch_ledger import SPARC_PULL_DONE, append_done_entries as _ledger_append
-from tav_shared.batch_ledger import read_done_list as _ledger_read_done
-from tav_shared.tav_project_paths import (
+from sb_shared.batch_ledger import SPARC_PULL_DONE, append_done_entries as _ledger_append
+from sb_shared.batch_ledger import read_done_list as _ledger_read_done
+from sb_shared.project_paths import (
     FINISHED_A_DIR,
     LEGACY_FINISHED_A_DIR,
-    ensure_tav_project_dirs,
+    ensure_project_dirs,
     finished_a_search_dirs,
     move_to_finished_archive,
 )
 
-from tav_shared.tav_project_paths import TAU_SUPERBLOCK_ROOT
+from sb_shared.project_paths import SUPERBLOCK_ROOT
 
-DATASETS_DIR = TAU_SUPERBLOCK_ROOT / "datasets" / "sparc"
-LEGACY_DATA_DIR = TAU_SUPERBLOCK_ROOT / "data" / "sparc"
+DATASETS_DIR = SUPERBLOCK_ROOT / "datasets" / "sparc"
+LEGACY_DATA_DIR = SUPERBLOCK_ROOT / "data" / "sparc"
 DEFAULT_DATA_DIR = DATASETS_DIR
 DEFAULT_DONE_FILE = SPARC_PULL_DONE
 
@@ -73,7 +73,7 @@ class PullSummary:
 
 def ensure_dirs() -> None:
     DATASETS_DIR.mkdir(parents=True, exist_ok=True)
-    ensure_tav_project_dirs()
+    ensure_project_dirs()
 
 
 def _migrate_legacy_csvs() -> None:
@@ -161,7 +161,7 @@ def catalog_cache_status(
 
 
 def _archived_galaxy_stems_in_finished_a() -> Set[str]:
-    """Galaxy CSV stems present under tav_project/finishedA/ (archived after analysis)."""
+    """Galaxy CSV stems present under the staging finishedA/ archive (archived after analysis)."""
     stems: Set[str] = set()
     for archive_dir in finished_a_search_dirs():
         if not archive_dir.is_dir():
@@ -380,7 +380,7 @@ def pull_selected_galaxies(
 
 
 def archive_used_datasets(paths: Iterable[Path | str]) -> List[Path]:
-    """Move processed SPARC CSVs from datasets/sparc/ into tav_project/finishedA/ (replaces prior run)."""
+    """Move processed SPARC CSVs from datasets/sparc/ into the staging finishedA/ archive (replaces prior run)."""
     ensure_dirs()
     moved: List[Path] = []
     seen: set[Path] = set()

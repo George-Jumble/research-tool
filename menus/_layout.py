@@ -13,14 +13,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # =============================================================================
 
 MENU_LAYOUT: dict[str, list[str]] = {
-    "astronomical": ["sparc", "frb", "tav_resonance", "desi", "halogas"],
+    "astronomical": ["sparc", "frb", "desi", "halogas"],
     "gravitic": ["ligo", "lisa"],
-    "particle": ["lhcb", "rgc", "casimir", "hepdata", "cms", "atlas", "alice", "belle"],
+    "particle": ["lhcb", "casimir", "hepdata", "cms", "atlas", "alice", "belle"],
     "prime_past": [],
     "empirical_tests": [],
-    "tsb_research": [],
     "planck_cmb": [],
-    "integrator": [],
 }
 
 
@@ -35,7 +33,7 @@ def ensure_menu_folders(root: Path | None = None) -> None:
             sub_path = domain_path / name
             sub_path.mkdir(parents=True, exist_ok=True)
             _touch_init(sub_path)
-    for top in ("menus", "tav_shared", "tav_research"):
+    for top in ("menus", "sb_shared", "sb_research"):
         path = root / top
         path.mkdir(parents=True, exist_ok=True)
         _touch_init(path)

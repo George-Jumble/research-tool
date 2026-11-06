@@ -15,11 +15,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict
 
-from tav_shared.llm_analysis import analyze_run_output, parse_provider_list
-from tav_shared.remote_ai.api_registry import provider_status
-from tav_shared.remote_ai.connection_test import test_api_connections
-from tav_shared.remote_ai.load_keys import load_api_keys
-from tav_shared.tav_project_paths import TAU_SUPERBLOCK_ROOT
+from sb_shared.llm_analysis import analyze_run_output, parse_provider_list
+from sb_shared.remote_ai.api_registry import provider_status
+from sb_shared.remote_ai.connection_test import test_api_connections
+from sb_shared.remote_ai.load_keys import load_api_keys
+from sb_shared.project_paths import SUPERBLOCK_ROOT
 
 MODULE_TAG = "REMOTE_AI"
 
@@ -37,7 +37,7 @@ _ACTION_KEYS: Dict[str, str] = {
     "Provider Configuration Status": "provider_status",
 }
 
-ARTIFACTS_DIR = TAU_SUPERBLOCK_ROOT / "artifacts" / "remote_ai"
+ARTIFACTS_DIR = SUPERBLOCK_ROOT / "artifacts" / "remote_ai"
 
 
 def is_module_selection(repo: str | None) -> bool:
@@ -60,9 +60,9 @@ def entry_fields(action: str) -> list[dict]:
             {
                 "key": "artifact_path",
                 "label": "Artifact path (JSON, log, .txt)",
-                "default": "artifacts/prime_past/best_tav_bbn_config.json",
+                "default": "artifacts/superblock_residuals/",
                 "required": True,
-                "hint": "Relative to TauSuperblock root or absolute path",
+                "hint": "Relative to Superblock root or absolute path",
             },
             {
                 "key": "analysis_focus",
@@ -107,7 +107,7 @@ def entry_instructions(action: str) -> list[str]:
 def _resolve_path(raw: str) -> Path:
     path = Path(raw.strip())
     if not path.is_absolute():
-        path = TAU_SUPERBLOCK_ROOT / path
+        path = SUPERBLOCK_ROOT / path
     return path
 
 
@@ -128,7 +128,7 @@ def run_action(
     if action == "test_connections":
         providers = parse_provider_list(options)
         result = test_api_connections(providers=providers, verbose=True)
-        from tav_shared.artifact_paths import TestSlug, artifact_path
+        from sb_shared.artifact_paths import TestSlug, artifact_path
 
         out = artifact_path(TestSlug.REMOTE_AI, "connection_test", "report", "json")
         out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
@@ -174,13 +174,13 @@ def run_action(
             if context
             else prompt
         )
-        from tav_shared.llm_analysis import query_all_providers
+        from sb_shared.llm_analysis import query_all_providers
 
         providers = parse_provider_list(options)
         results = query_all_providers(
             full_prompt, providers=providers, options=options
         )
-        from tav_shared.artifact_paths import TestSlug, artifact_path, artifact_timestamp
+        from sb_shared.artifact_paths import TestSlug, artifact_path, artifact_timestamp
 
         stamp = artifact_timestamp()
         out = artifact_path(TestSlug.REMOTE_AI, "custom_prompt", "report", "json")

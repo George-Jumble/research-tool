@@ -11,10 +11,10 @@ import tempfile
 from pathlib import Path
 from urllib.request import urlopen
 
-from tav_shared.tav_project_paths import TAU_SUPERBLOCK_ROOT
+from sb_shared.project_paths import SUPERBLOCK_ROOT
 
 PELICAN_VERSION = os.environ.get("PELICAN_VERSION", "7.25.0")
-RESEARCH_ROOT = TAU_SUPERBLOCK_ROOT.parent.parent
+RESEARCH_ROOT = SUPERBLOCK_ROOT.parent.parent
 BUNDLED_PELICAN = RESEARCH_ROOT / "third_party" / "pelican" / "bin" / "pelican"
 PELICAN_DOWNLOAD_BASE = "https://dl.pelicanplatform.org"
 

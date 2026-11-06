@@ -12,7 +12,7 @@ from typing import Dict, List
 import matplotlib.pyplot as plt
 
 from menus.empirical_tests import tests as empirical
-from tav_shared.llm_analysis import analyze_run_output as query_llm_analysis
+from sb_shared.llm_analysis import analyze_run_output as query_llm_analysis
 
 MODULE_TAG = "EMPIRICAL_TESTS"
 
@@ -22,13 +22,23 @@ MENU_ACTIONS = [
     "Neutron Lifetime Test",
     "Yang-Mills Glueball Test",
     "BBN integrator status",
+    "Superblock v5 Confrontations",
     "Full Pipeline (Plot + LaTeX)",
 ]
 
 _ACTION_CONFIG: Dict[str, Dict] = {
     "Run All Tests (Curated)": {
         "tests": ["all"],
-        "sources": ["pdg_light_quarks", "neutron_lifetime", "glueball_lattice"],
+        "sources": [
+            "pdg_light_quarks",
+            "neutron_lifetime",
+            "glueball_lattice",
+            "bbn_abundances",
+            "planck2018_cosmology",
+            "superblock_v5_predictions",
+            "hidden_bao_class_grid",
+            "relay_class_configs",
+        ],
         "plot": False,
         "latex": False,
     },
@@ -56,9 +66,30 @@ _ACTION_CONFIG: Dict[str, Dict] = {
         "plot": True,
         "latex": False,
     },
+    "Superblock v5 Confrontations": {
+        "tests": ["v5"],
+        "sources": [
+            "planck2018_cosmology",
+            "superblock_v5_predictions",
+            "bbn_abundances",
+            "hidden_bao_class_grid",
+            "relay_class_configs",
+        ],
+        "plot": False,
+        "latex": False,
+    },
     "Full Pipeline (Plot + LaTeX)": {
         "tests": ["all"],
-        "sources": ["pdg_light_quarks", "neutron_lifetime", "glueball_lattice"],
+        "sources": [
+            "pdg_light_quarks",
+            "neutron_lifetime",
+            "glueball_lattice",
+            "bbn_abundances",
+            "planck2018_cosmology",
+            "superblock_v5_predictions",
+            "hidden_bao_class_grid",
+            "relay_class_configs",
+        ],
         "plot": True,
         "latex": True,
     },
@@ -133,12 +164,19 @@ def run_action(selection: str, show_plots: bool = True, options: dict | None = N
         sources = [key for key in picked if key in empirical.REPOS] or sources
 
     if selection == "BBN integrator status":
-        from menus.prime_past.bbn_interference import run_bbn_comparison
+        from menus.prime_past.bbn_network import run_bbn_comparison
 
         comparison = run_bbn_comparison(options, verbose=True)
         comparison["status"] = "FAIL_INTEGRATOR"
         comparison["ledger"] = "FAIL_INTEGRATOR"
         comparison.setdefault("reason", "network did not form D / did not finish n->He4")
+        from bbn_isolated.runner import report as alterbbn_gate_report
+
+        comparison["alterbbn_baseline"] = alterbbn_gate_report()
+        print(
+            "[Superblock Residual Engine] AlterBBN baseline gates: "
+            f"{comparison['alterbbn_baseline']['status']} {comparison['alterbbn_baseline']['gates']}"
+        )
         report_path = empirical.run_artifact("bbn_status", "json")
         report_path.write_text(json.dumps(comparison, indent=2) + "\n", encoding="utf-8")
         print(f"[Superblock Residual Engine] BBN integrator status: {report_path}")
